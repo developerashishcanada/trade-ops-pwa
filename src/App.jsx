@@ -9,6 +9,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginInput, setLoginInput] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
@@ -26,7 +27,10 @@ export default function App() {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
+  // Fetch operational data ONLY after user successfully signs in
   useEffect(() => {
+    if (!currentUserEmail) return;
+
     const fetchData = async () => {
       try {
         const response = await fetch(API_URL);
@@ -74,10 +78,10 @@ export default function App() {
       }
     };
     fetchData();
-  }, []);
+  }, [currentUserEmail]);
 
-  // Case-insensitive Login Authentication supporting multiple retries
-  const handleLogin = (e) => {
+  // Handle login by querying the API on-demand after email input
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
     if (!loginInput || !loginInput.includes('@')) {
@@ -85,18 +89,48 @@ export default function App() {
       return;
     }
     const email = loginInput.trim().toLowerCase();
-    
-    // Case-insensitive lookup against authorizedUsers sheet data
-    const foundUser = authorizedUsers.find(u => u.email.toLowerCase() === email);
-    const fallbackAdmin = email === 'developerashish.canada@gmail.com';
+    setIsAuthenticating(true);
 
-    if (foundUser || fallbackAdmin) {
-      setCurrentUserEmail(email);
-      setIsAdmin(foundUser ? foundUser.role === 'admin' : true);
-      setActiveTab('overview');
-      setLoginInput('');
-    } else {
-      setLoginError('Access denied. Email not found in the authorized Users sheet.');
+    try {
+      // Fetch users list from sheet on-demand during login
+      const response = await fetch(API_URL);
+      const json = await response.json();
+      
+      let usersList = [];
+      if (json.status === 'success' && json.users) {
+        usersList = json.users.map(u => ({
+          email: u.Email ? String(u.Email).trim().toLowerCase() : '',
+          role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
+        })).filter(u => u.email);
+        setAuthorizedUsers(usersList);
+      }
+
+      const hardcodedAdmins = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
+      const isHardcodedAdmin = hardcodedAdmins.includes(email);
+      const foundUser = usersList.find(u => u.email === email);
+
+      if (isHardcodedAdmin || foundUser) {
+        setCurrentUserEmail(email);
+        setIsAdmin(isHardcodedAdmin || foundUser.role === 'admin');
+        setActiveTab('overview');
+        setLoginInput('');
+      } else {
+        setLoginError('Access denied. Email not found in the authorized Users sheet.');
+      }
+    } catch (err) {
+      console.error("Authentication check failed", err);
+      // Fallback check for trusted admins even if network fails
+      const hardcodedAdmins = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
+      if (hardcodedAdmins.includes(email)) {
+        setCurrentUserEmail(email);
+        setIsAdmin(true);
+        setActiveTab('overview');
+        setLoginInput('');
+      } else {
+        setLoginError('Network error verifying user. Please check connection and retry.');
+      }
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -325,7 +359,7 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
-  // LOGIN SCREEN WITH ERROR RETRY SUPPORT
+  // LOGIN SCREEN (No background API call on mount)
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
@@ -353,12 +387,13 @@ export default function App() {
             )}
             <button 
               type="submit"
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm"
+              disabled={isAuthenticating}
+              className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm disabled:opacity-50"
             >
-              Sign In
+              {isAuthenticating ? 'Verifying access...' : 'Sign In'}
             </button>
           </form>
-          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list (case-insensitive).</p>
+          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list.</p>
         </div>
       </div>
     );
