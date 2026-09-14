@@ -10,6 +10,11 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStep, setEditingStep] = useState(null);
   const [queueScope, setQueueScope] = useState('all'); 
+  
+  // New Filter States
+  const [dealFilter, setDealFilter] = useState('all'); // 'all' | 'highSeas'
+  const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // 'all' | 'Pending' | 'Delayed'
+
   const [stepMaster, setStepMaster] = useState([]);
   const currentUserEmail = 'developerashish.canada@gmail.com';
 
@@ -75,10 +80,30 @@ export default function App() {
   const metrics = useMemo(() => {
     const liveDeals = deals.length;
     const highSeas = deals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y').length;
-    const delayedSteps = steps.filter(s => s.status === 'Delayed').length;
-    const pendingSteps = steps.filter(s => s.status === 'Pending').length;
+    const delayedSteps = steps.filter(s => s.status.toLowerCase() === 'delayed').length;
+    const pendingSteps = steps.filter(s => s.status.toLowerCase() === 'pending').length;
     return { liveDeals, highSeas, delayedSteps, pendingSteps };
   }, [deals, steps]);
+
+  // Filtered Deals List
+  const filteredDeals = useMemo(() => {
+    if (dealFilter === 'highSeas') {
+      return deals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y');
+    }
+    return deals;
+  }, [deals, dealFilter]);
+
+  // Filtered Queue Steps List
+  const filteredQueueSteps = useMemo(() => {
+    let list = steps.filter(s => s.status !== 'Done');
+    if (queueStatusFilter !== 'all') {
+      list = list.filter(s => s.status.toLowerCase() === queueStatusFilter.toLowerCase());
+    }
+    if (queueScope === 'my') {
+      list = list.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail.toLowerCase());
+    }
+    return list;
+  }, [steps, queueStatusFilter, queueScope, currentUserEmail]);
 
   const handleCreateDeal = async (e) => {
     e.preventDefault();
@@ -186,15 +211,15 @@ export default function App() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">Trade Operations Console</h1>
-              <button onClick={() => setActiveTab('deals')} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
+              <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); }} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
                 <span>&rarr;</span> Open deals
               </button>
             </div>
 
-            {/* Clickable Metric Grid */}
+            {/* Clickable & Filtering Metric Grid */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div 
-                onClick={() => setActiveTab('deals')}
+                onClick={() => { setDealFilter('all'); setActiveTab('deals'); }}
                 className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Live deals &rarr;</p>
@@ -203,7 +228,7 @@ export default function App() {
               </div>
 
               <div 
-                onClick={() => setActiveTab('deals')}
+                onClick={() => { setDealFilter('highSeas'); setActiveTab('deals'); }}
                 className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">High seas &rarr;</p>
@@ -212,7 +237,7 @@ export default function App() {
               </div>
 
               <div 
-                onClick={() => setActiveTab('queue')}
+                onClick={() => { setQueueStatusFilter('Delayed'); setActiveTab('queue'); }}
                 className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Delayed steps &rarr;</p>
@@ -221,7 +246,7 @@ export default function App() {
               </div>
 
               <div 
-                onClick={() => setActiveTab('queue')}
+                onClick={() => { setQueueStatusFilter('Pending'); setActiveTab('queue'); }}
                 className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Pending steps &rarr;</p>
@@ -232,7 +257,7 @@ export default function App() {
 
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-sm font-bold text-slate-900">Attention queue</h2>
-              <button onClick={() => setActiveTab('queue')} className="text-xs font-semibold text-brand-600 hover:underline">Open queue</button>
+              <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); }} className="text-xs font-semibold text-brand-600 hover:underline">Open queue</button>
             </div>
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
               {steps.filter(s => s.status !== 'Done').slice(0, 7).map((step) => (
@@ -261,19 +286,37 @@ export default function App() {
                 <Plus className="w-3.5 h-3.5" /> New deal
               </button>
             </div>
+
+            {/* Deal Filter Dropdown */}
+            <div className="mb-4">
+              <label className="text-xs font-medium text-slate-700 block mb-1">Deal filter</label>
+              <select 
+                value={dealFilter}
+                onChange={(e) => setDealFilter(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="all">All deals ({deals.length})</option>
+                <option value="highSeas">High seas only ({metrics.highSeas})</option>
+              </select>
+            </div>
+
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden mt-4">
-              {deals.map((deal) => (
-                <div key={deal.id} onClick={() => setSelectedDealId(deal.id)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <Ship className="w-4 h-4 text-slate-500" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">{deal.id} &middot; {deal.buyer}</p>
-                      <p className="text-[11px] text-slate-500">{deal.supplier} &middot; Ship {deal.shipmentDate}</p>
+              {filteredDeals.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">No deals match the selected filter.</div>
+              ) : (
+                filteredDeals.map((deal) => (
+                  <div key={deal.id} onClick={() => setSelectedDealId(deal.id)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <Ship className="w-4 h-4 text-slate-500" />
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{deal.id} &middot; {deal.buyer}</p>
+                        <p className="text-[11px] text-slate-500">{deal.supplier} &middot; Ship {deal.shipmentDate}</p>
+                      </div>
                     </div>
+                    <span className="bg-amber-100/70 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">{deal.status}</span>
                   </div>
-                  <span className="bg-amber-100/70 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">{deal.status}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -325,24 +368,52 @@ export default function App() {
 
         {activeTab === 'queue' && (
           <div>
-            <h1 className="text-xl font-bold text-slate-900 mb-3">My Queue</h1>
-            <select value={queueScope} onChange={(e) => setQueueScope(e.target.value)} className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none mb-4">
-              <option value="all">All team steps</option>
-              <option value="my">My assigned steps</option>
-            </select>
+            <h1 className="text-xl font-bold text-slate-900 mb-3">Queue &amp; Actions</h1>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <div>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">Status Filter</label>
+                <select 
+                  value={queueStatusFilter} 
+                  onChange={(e) => setQueueStatusFilter(e.target.value)} 
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Delayed">Delayed</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">Assignment</label>
+                <select 
+                  value={queueScope} 
+                  onChange={(e) => setQueueScope(e.target.value)} 
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
+                >
+                  <option value="all">All team steps</option>
+                  <option value="my">My assigned steps</option>
+                </select>
+              </div>
+            </div>
+
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
-              {steps.filter(s => s.status !== 'Done').map((step) => (
-                <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                  <div className="flex items-start gap-2.5">
-                    <FileText className="w-4 h-4 text-slate-400 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
-                      <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+              {filteredQueueSteps.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">No steps match the active filter criteria.</div>
+              ) : (
+                filteredQueueSteps.map((step) => (
+                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                    <div className="flex items-start gap-2.5">
+                      <FileText className="w-4 h-4 text-slate-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
+                        <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+                      </div>
                     </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
+                      {step.status}
+                    </span>
                   </div>
-                  <span className="bg-amber-100/70 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">{step.status}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -452,10 +523,10 @@ export default function App() {
         <button onClick={() => { setActiveTab('overview'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'overview' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[10px]">Overview</span>
         </button>
-        <button onClick={() => { setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
+        <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
         </button>
-        <button onClick={() => { setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
+        <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
         </button>
       </div>
