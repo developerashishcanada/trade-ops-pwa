@@ -93,7 +93,6 @@ export default function App() {
       HighSeas: formData.highSeas
     };
 
-    // Dynamically build steps using StepMaster data from Google Sheets if available, with robust fallback
     const rulesToUse = stepMaster.length > 0 ? stepMaster : [
       { stepName: 'Deal Closure', rule: 7, emailId: 'sales@company.com' },
       { stepName: 'Loading', rule: 14, emailId: 'satya223@gmail.com' },
@@ -191,28 +190,46 @@ export default function App() {
                 <span>&rarr;</span> Open deals
               </button>
             </div>
+
+            {/* Clickable Metric Grid */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              <div className="border border-slate-200 rounded-xl p-3.5 bg-white">
-                <p className="text-xs font-medium text-slate-500">Live deals</p>
+              <div 
+                onClick={() => setActiveTab('deals')}
+                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+              >
+                <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Live deals &rarr;</p>
                 <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.liveDeals}</p>
                 <p className="text-[11px] text-slate-400">Across active routes</p>
               </div>
-              <div className="border border-slate-200 rounded-xl p-3.5 bg-white">
-                <p className="text-xs font-medium text-slate-500">High seas</p>
+
+              <div 
+                onClick={() => setActiveTab('deals')}
+                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+              >
+                <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">High seas &rarr;</p>
                 <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.highSeas}</p>
                 <p className="text-[11px] text-slate-400">Require close watch</p>
               </div>
-              <div className="border border-slate-200 rounded-xl p-3.5 bg-white">
-                <p className="text-xs font-medium text-slate-500">Delayed steps</p>
+
+              <div 
+                onClick={() => setActiveTab('queue')}
+                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+              >
+                <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Delayed steps &rarr;</p>
                 <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.delayedSteps}</p>
-                <p className="text-[11px] text-slate-400">No delay flags</p>
+                <p className="text-[11px] text-slate-400">Require action</p>
               </div>
-              <div className="border border-slate-200 rounded-xl p-3.5 bg-white">
-                <p className="text-xs font-medium text-slate-500">Pending steps</p>
+
+              <div 
+                onClick={() => setActiveTab('queue')}
+                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+              >
+                <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Pending steps &rarr;</p>
                 <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.pendingSteps}</p>
                 <p className="text-[11px] text-slate-400">Awaiting operator update</p>
               </div>
             </div>
+
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-sm font-bold text-slate-900">Attention queue</h2>
               <button onClick={() => setActiveTab('queue')} className="text-xs font-semibold text-brand-600 hover:underline">Open queue</button>
@@ -331,7 +348,7 @@ export default function App() {
         )}
       </div>
 
-      {/* UPDATE STEP MODAL */}
+      {/* UPDATE STEP MODAL WITH DEADLINE DISPLAY */}
       {editingStep && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl animate-in slide-in-from-bottom duration-200">
@@ -343,6 +360,11 @@ export default function App() {
               <button onClick={() => setEditingStep(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
             </div>
             <form onSubmit={handleUpdateStep} className="space-y-3 text-xs">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex justify-between items-center">
+                <span className="font-semibold text-slate-500">Target Deadline</span>
+                <span className="font-bold text-slate-800">{editingStep.dueDate || 'No deadline set'}</span>
+              </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Status</label>
                 <select 
@@ -431,7 +453,7 @@ export default function App() {
           <div className={`p-1 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[10px]">Overview</span>
         </button>
         <button onClick={() => { setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-          <div className={`p-1 rounded-full ${activeTab => activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
+          <div className={`p-1 rounded-full ${activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
         </button>
         <button onClick={() => { setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
