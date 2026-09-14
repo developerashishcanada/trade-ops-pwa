@@ -8,6 +8,7 @@ export default function App() {
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginInput, setLoginInput] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
@@ -45,7 +46,7 @@ export default function App() {
             id: s.StepID !== undefined && s.StepID !== null ? String(s.StepID).trim() : '',
             dealId: s.DealID !== undefined && s.DealID !== null ? String(s.DealID).trim() : '',
             name: s.StepName || '',
-            assignedEmail: s.AssignedTo || '',
+            assignedEmail: s.AssignedTo ? String(s.AssignedTo).trim().toLowerCase() : '',
             dueDate: s.Deadline ? String(s.Deadline).split('T')[0] : '',
             actualDate: s.ActualDate ? String(s.ActualDate).split('T')[0] : '',
             status: s.Status || 'Pending',
@@ -55,7 +56,7 @@ export default function App() {
           const mappedMaster = (json.stepMaster || []).map(m => ({
             stepName: m.StepName || '',
             rule: Number(m.Rule) || 0,
-            emailId: m.EmailID || 'ops@company.com'
+            emailId: m.EmailID ? String(m.EmailID).trim().toLowerCase() : 'ops@company.com'
           })).filter(m => m.stepName);
 
           const mappedUsers = (json.users || []).map(u => ({
@@ -75,20 +76,27 @@ export default function App() {
     fetchData();
   }, []);
 
+  // Case-insensitive Login Authentication supporting multiple retries
   const handleLogin = (e) => {
     e.preventDefault();
-    if (!loginInput || !loginInput.includes('@')) return;
+    setLoginError('');
+    if (!loginInput || !loginInput.includes('@')) {
+      setLoginError('Please enter a valid email address.');
+      return;
+    }
     const email = loginInput.trim().toLowerCase();
     
-    const foundUser = authorizedUsers.find(u => u.email === email);
+    // Case-insensitive lookup against authorizedUsers sheet data
+    const foundUser = authorizedUsers.find(u => u.email.toLowerCase() === email);
     const fallbackAdmin = email === 'developerashish.canada@gmail.com';
 
     if (foundUser || fallbackAdmin) {
       setCurrentUserEmail(email);
       setIsAdmin(foundUser ? foundUser.role === 'admin' : true);
       setActiveTab('overview');
+      setLoginInput('');
     } else {
-      alert("Access denied. Email not found in the authorized Users sheet.");
+      setLoginError('Access denied. Email not found in the authorized Users sheet.');
     }
   };
 
@@ -96,16 +104,45 @@ export default function App() {
     setCurrentUserEmail(null);
     setIsAdmin(false);
     setLoginInput('');
+    setLoginError('');
   };
 
   const [formData, setFormData] = useState({
-    id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
+    id: 'AV-2026-001',
     buyer: '',
     supplier: '',
     shipmentDate: '',
     destinationDate: '',
     highSeas: 'No'
   });
+
+  const handleOpenAddModal = () => {
+    const currentYear = new Date().getFullYear();
+    const prefix = `AV-${currentYear}-`;
+    
+    let maxSeq = 0;
+    deals.forEach(d => {
+      if (d.id && d.id.startsWith(prefix)) {
+        const parts = d.id.split('-');
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    });
+
+    const nextSeq = String(maxSeq + 1).padStart(3, '0');
+    
+    setFormData({
+      id: `${prefix}${nextSeq}`,
+      buyer: '',
+      supplier: '',
+      shipmentDate: '',
+      destinationDate: '',
+      highSeas: 'No'
+    });
+    setShowAddModal(true);
+  };
 
   const visibleSteps = useMemo(() => {
     if (isAdmin) return steps;
@@ -149,7 +186,6 @@ export default function App() {
     return list;
   }, [visibleSteps, queueStatusFilter, queueScope, isAdmin, currentUserEmail]);
 
-  // Playbook & User Management Handlers
   const handlePlaybookChange = (index, field, value) => {
     const updated = [...stepMaster];
     updated[index][field] = value;
@@ -248,7 +284,7 @@ export default function App() {
     
     setShowAddModal(false);
     setFormData({
-      id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
+      id: 'AV-2026-001',
       buyer: '',
       supplier: '',
       shipmentDate: '',
@@ -289,6 +325,7 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
+  // LOGIN SCREEN WITH ERROR RETRY SUPPORT
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
@@ -306,11 +343,14 @@ export default function App() {
                 type="text"
                 placeholder="e.g. user@company.com"
                 value={loginInput}
-                onChange={(e) => setLoginInput(e.target.value)}
+                onChange={(e) => { setLoginInput(e.target.value); setLoginError(''); }}
                 className="w-full text-xs border border-slate-200 rounded-lg p-3 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 required
               />
             </div>
+            {loginError && (
+              <p className="text-[11px] text-red-600 font-medium bg-red-50 p-2 rounded-lg border border-red-100">{loginError}</p>
+            )}
             <button 
               type="submit"
               className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm"
@@ -318,7 +358,7 @@ export default function App() {
               Sign In
             </button>
           </form>
-          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list.</p>
+          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list (case-insensitive).</p>
         </div>
       </div>
     );
@@ -429,7 +469,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-3">
               <h1 className="text-xl font-bold text-slate-900">Deals</h1>
               {isAdmin && (
-                <button onClick={() => setShowAddModal(true)} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
+                <button onClick={handleOpenAddModal} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
                   <Plus className="w-3.5 h-3.5" /> New deal
                 </button>
               )}
