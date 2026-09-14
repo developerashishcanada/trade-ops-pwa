@@ -1,32 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutGrid, Ship, CheckSquare, BookOpen, Plus, X, 
-  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Bell, Shield, User
+  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save
 } from 'lucide-react';
 
 export default function App() {
+  // Authentication State
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loginInput, setLoginInput] = useState('');
+
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStep, setEditingStep] = useState(null);
   const [queueScope, setQueueScope] = useState('all'); 
-  
-  // Role & Access Control State ('admin' | 'user')
-  const [userRole, setUserRole] = useState('admin');
-  const [currentUserEmail, setCurrentUserEmail] = useState('sales@company.com'); // Switchable for testing
 
   // Filter States
-  const [dealFilter, setDealFilter] = useState('all'); // 'all' | 'highSeas'
-  const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // 'all' | 'Pending' | 'Delayed'
+  const [dealFilter, setDealFilter] = useState('all'); 
+  const [queueStatusFilter, setQueueStatusFilter] = useState('all'); 
 
   const [stepMaster, setStepMaster] = useState([]);
-
-  const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
-
   const [deals, setDeDeals] = useState([]);
   const [steps, setSteps] = useState([]);
 
-  // Fetch existing data and StepMaster rules from Google Sheet on load / refresh
+  // Authorized Admin Emails (You can add more admin emails here)
+  const ADMIN_EMAILS = ['developerashish.canada@gmail.com', 'admin@company.com'];
+
+  const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
+
+  // Fetch data on load
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -71,6 +74,25 @@ export default function App() {
     fetchData();
   }, []);
 
+  // Handle Gmail Login Authentication
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (!loginInput || !loginInput.includes('@')) return;
+    const email = loginInput.trim().toLowerCase();
+    setCurrentUserEmail(email);
+    
+    // Check if email is in ADMIN list or matches sheet assignees configured as admin
+    const adminCheck = ADMIN_EMAILS.includes(email);
+    setIsAdmin(adminCheck);
+    setActiveTab('overview');
+  };
+
+  const handleLogout = () => {
+    setCurrentUserEmail(null);
+    setIsAdmin(false);
+    setLoginInput('');
+  };
+
   const [formData, setFormData] = useState({
     id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
     buyer: '',
@@ -80,29 +102,21 @@ export default function App() {
     highSeas: 'No'
   });
 
-  // Extract all unique assignees from StepMaster for role testing dropdown
-  const availableEmails = useMemo(() => {
-    const emails = stepMaster.map(m => m.emailId);
-    return Array.from(new Set(['sales@company.com', 'satya223@gmail.com', 'docs@company.com', 'ops@company.com', 'finance@company.com', ...emails]));
-  }, [stepMaster]);
-
-  // Role-Based Filtering for Deals and Steps
+  // Role-Based Filtering
   const visibleSteps = useMemo(() => {
-    if (userRole === 'admin') return steps;
-    // Standard users only see steps assigned to their email
-    return steps.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail.toLowerCase());
-  }, [steps, userRole, currentUserEmail]);
+    if (isAdmin) return steps;
+    return steps.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail?.toLowerCase());
+  }, [steps, isAdmin, currentUserEmail]);
 
   const visibleDealIds = useMemo(() => {
-    if (userRole === 'admin') return new Set(deals.map(d => d.id));
-    // Standard users only see deals that have at least one step assigned to them
+    if (isAdmin) return new Set(deals.map(d => d.id));
     return new Set(visibleSteps.map(s => s.dealId));
-  }, [deals, visibleSteps, userRole]);
+  }, [deals, visibleSteps, isAdmin]);
 
   const visibleDeals = useMemo(() => {
-    if (userRole === 'admin') return deals;
+    if (isAdmin) return deals;
     return deals.filter(d => visibleDealIds.has(d.id));
-  }, [deals, visibleDealIds, userRole]);
+  }, [deals, visibleDealIds, isAdmin]);
 
   const metrics = useMemo(() => {
     const liveDeals = visibleDeals.length;
@@ -112,7 +126,6 @@ export default function App() {
     return { liveDeals, highSeas, delayedSteps, pendingSteps };
   }, [visibleDeals, visibleSteps]);
 
-  // Filtered Deals List
   const filteredDeals = useMemo(() => {
     let list = visibleDeals;
     if (dealFilter === 'highSeas') {
@@ -121,18 +134,38 @@ export default function App() {
     return list;
   }, [visibleDeals, dealFilter]);
 
-  // Filtered Queue Steps List
   const filteredQueueSteps = useMemo(() => {
     let list = visibleSteps.filter(s => s.status !== 'Done');
     if (queueStatusFilter !== 'all') {
       list = list.filter(s => s.status.toLowerCase() === queueStatusFilter.toLowerCase());
     }
-    if (userRole === 'admin' && queueScope === 'my') {
-      list = list.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail.toLowerCase());
+    if (isAdmin && queueScope === 'my') {
+      list = list.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail?.toLowerCase());
     }
     return list;
-  }, [visibleSteps, queueStatusFilter, queueScope, userRole, currentUserEmail]);
+  }, [visibleSteps, queueStatusFilter, queueScope, isAdmin, currentUserEmail]);
 
+  // Handle Playbook Rule Edits (Admin Only)
+  const handlePlaybookChange = (index, field, value) => {
+    const updated = [...stepMaster];
+    updated[index][field] = value;
+    setStepMaster(updated);
+  };
+
+  const savePlaybookRules = async () => {
+    const payload = {
+      action: 'updatePlaybook',
+      rules: stepMaster.map(m => ({ StepName: m.stepName, Rule: m.rule, EmailID: m.emailId }))
+    };
+    try {
+      await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      alert("Playbook rules saved successfully!");
+    } catch (err) {
+      console.error("Failed to save rules", err);
+    }
+  };
+
+  // Create Deal using dynamic StepMaster rule offsets
   const handleCreateDeal = async (e) => {
     e.preventDefault();
     if (!formData.id || !formData.buyer || !formData.shipmentDate) return;
@@ -232,33 +265,61 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
+  // LOGIN SCREEN (If not authenticated)
+  if (!currentUserEmail) {
+    return (
+      <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
+        <div className="bg-white p-6 rounded-2xl shadow-xl w-full border border-slate-100 text-center">
+          <div className="w-12 h-12 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-6 h-6" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900 mb-1">Trade Operations Console</h1>
+          <p className="text-xs text-slate-500 mb-6">Sign in with your Gmail account to access your assigned workflows.</p>
+
+          <form onSubmit={handleLogin} className="space-y-3 text-left">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Gmail Address</label>
+              <input 
+                type="email"
+                placeholder="e.g. developerashish.canada@gmail.com"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg p-3 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                required
+              />
+            </div>
+            <button 
+              type="submit"
+              className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm"
+            >
+              Sign In with Google
+            </button>
+          </form>
+          <p className="text-[10px] text-slate-400 mt-4">Authorized admin emails are automatically granted management privileges.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 border-x border-slate-100 flex flex-col justify-between select-none">
       
-      {/* ACCESS CONTROL BANNER (For simulation/testing roles) */}
-      <div className="bg-slate-900 text-white px-4 py-2 text-xs flex justify-between items-center">
+      {/* HEADER BAR WITH USER SESSION */}
+      <div className="bg-slate-900 text-white px-4 py-2.5 text-xs flex justify-between items-center">
         <div className="flex items-center gap-1.5">
-          {userRole === 'admin' ? <Shield className="w-3.5 h-3.5 text-amber-400" /> : <User className="w-3.5 h-3.5 text-brand-400" />}
-          <span className="font-semibold capitalize">{userRole} View</span>
+          {isAdmin ? <Shield className="w-3.5 h-3.5 text-amber-400" /> : <User className="w-3.5 h-3.5 text-brand-400" />}
+          <span className="font-semibold truncate max-w-[180px]">{currentUserEmail}</span>
         </div>
         <div className="flex items-center gap-2">
-          {userRole === 'user' && (
-            <select 
-              value={currentUserEmail} 
-              onChange={(e) => setCurrentUserEmail(e.target.value)}
-              className="bg-slate-800 text-white text-[11px] rounded px-1.5 py-0.5 border border-slate-700 outline-none max-w-[130px] truncate"
-            >
-              {availableEmails.map(em => <option key={em} value={em}>{em}</option>)}
-            </select>
-          )}
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${isAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-brand-500/20 text-brand-300'}`}>
+            {isAdmin ? 'Admin' : 'User'}
+          </span>
           <button 
-            onClick={() => { 
-              setUserRole(userRole === 'admin' ? 'user' : 'admin');
-              if (userRole === 'admin') setActiveTab('overview');
-            }}
-            className="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-semibold px-2 py-1 rounded transition border border-slate-700"
+            onClick={handleLogout}
+            title="Sign out"
+            className="text-slate-400 hover:text-white transition p-1"
           >
-            Switch to {userRole === 'admin' ? 'User' : 'Admin'}
+            <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -269,7 +330,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">Trade Operations</h1>
-                <p className="text-[11px] text-slate-400">{userRole === 'admin' ? 'Admin Console' : `Assigned to: ${currentUserEmail}`}</p>
+                <p className="text-[11px] text-slate-400">{isAdmin ? 'Full System Overview' : 'Assigned Workflow Overview'}</p>
               </div>
               <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); }} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
                 <span>&rarr;</span> Open deals
@@ -346,7 +407,7 @@ export default function App() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <h1 className="text-xl font-bold text-slate-900">Deals</h1>
-              {userRole === 'admin' && (
+              {isAdmin && (
                 <button onClick={() => setShowAddModal(true)} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
                   <Plus className="w-3.5 h-3.5" /> New deal
                 </button>
@@ -452,11 +513,11 @@ export default function App() {
                 <select 
                   value={queueScope} 
                   onChange={(e) => setQueueScope(e.target.value)} 
-                  disabled={userRole === 'user'}
+                  disabled={!isAdmin}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
                 >
-                  <option value="all">{userRole === 'admin' ? 'All team steps' : 'My assigned steps'}</option>
-                  {userRole === 'admin' && <option value="my">My assigned steps</option>}
+                  <option value="all">{isAdmin ? 'All team steps' : 'My assigned steps'}</option>
+                  {isAdmin && <option value="my">My assigned steps</option>}
                 </select>
               </div>
             </div>
@@ -484,31 +545,46 @@ export default function App() {
           </div>
         )}
 
-        {/* PLAYBOOK TAB (ADMIN ONLY) */}
-        {activeTab === 'playbook' && userRole === 'admin' && (
+        {/* PLAYBOOK TAB (ADMIN ONLY - EDITABLE RULES) */}
+        {activeTab === 'playbook' && isAdmin && (
           <div>
-            <h1 className="text-xl font-bold text-slate-900 mb-3">Playbook &amp; Access Control</h1>
-            <p className="text-xs text-slate-500 mb-4">Manage rule offsets and assignees directly via your StepMaster spreadsheet tab.</p>
+            <div className="flex justify-between items-center mb-3">
+              <h1 className="text-xl font-bold text-slate-900">Playbook &amp; Rules</h1>
+              <button 
+                onClick={savePlaybookRules}
+                className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition"
+              >
+                <Save className="w-3.5 h-3.5" /> Save Rules
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Edit rule offsets (days) and assignees below. New deals will calculate deadlines based on these live rules.</p>
             
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white text-xs">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
-                  <tr>
-                    <th className="py-2.5 px-3">Step Name</th>
-                    <th className="py-2.5 px-3">Rule Offset</th>
-                    <th className="py-2.5 px-3 text-right">Assignee Email</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {stepMaster.map((rule, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition">
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">{rule.stepName}</td>
-                      <td className="py-2.5 px-3 text-slate-500">+{rule.rule} days</td>
-                      <td className="py-2.5 px-3 text-right text-slate-500">{rule.emailId}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {stepMaster.map((rule, idx) => (
+                <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs space-y-2">
+                  <p className="font-bold text-slate-900">{rule.stepName}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Offset (Days)</label>
+                      <input 
+                        type="number"
+                        value={rule.rule}
+                        onChange={(e) => handlePlaybookChange(idx, 'rule', e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Assignee Email</label>
+                      <input 
+                        type="email"
+                        value={rule.emailId}
+                        onChange={(e) => handlePlaybookChange(idx, 'emailId', e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -572,7 +648,7 @@ export default function App() {
       )}
 
       {/* CREATE DEAL MODAL (ADMIN ONLY) */}
-      {showAddModal && userRole === 'admin' && (
+      {showAddModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4">
@@ -624,7 +700,7 @@ export default function App() {
         <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
         </button>
-        {userRole === 'admin' && (
+        {isAdmin && (
           <button onClick={() => { setActiveTab('playbook'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'playbook' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
             <div className={`p-1 rounded-full ${activeTab === 'playbook' ? 'bg-brand-50 text-brand-600' : ''}`}><BookOpen className="w-5 h-5" /></div><span className="text-[10px]">Playbook</span>
           </button>
