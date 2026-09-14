@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutGrid, Ship, CheckSquare, BookOpen, Plus, X, 
-  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save
+  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save, Trash2
 } from 'lucide-react';
 
 export default function App() {
-  // Authentication State
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginInput, setLoginInput] = useState('');
@@ -16,7 +15,6 @@ export default function App() {
   const [editingStep, setEditingStep] = useState(null);
   const [queueScope, setQueueScope] = useState('all'); 
 
-  // Filter States
   const [dealFilter, setDealFilter] = useState('all'); 
   const [queueStatusFilter, setQueueStatusFilter] = useState('all'); 
 
@@ -27,7 +25,6 @@ export default function App() {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
-  // Fetch data including Users tab on load
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -61,7 +58,6 @@ export default function App() {
             emailId: m.EmailID || 'ops@company.com'
           })).filter(m => m.stepName);
 
-          // Map dynamic Users sheet data (Expecting columns: Email, Role)
           const mappedUsers = (json.users || []).map(u => ({
             email: u.Email ? String(u.Email).trim().toLowerCase() : '',
             role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
@@ -79,16 +75,12 @@ export default function App() {
     fetchData();
   }, []);
 
-  // Handle Dynamic Login Authentication against 'Users' sheet data
   const handleLogin = (e) => {
     e.preventDefault();
     if (!loginInput || !loginInput.includes('@')) return;
     const email = loginInput.trim().toLowerCase();
     
-    // Find user in the database list pulled from the Users tab
     const foundUser = authorizedUsers.find(u => u.email === email);
-    
-    // Fallback default admin if no users sheet is populated yet
     const fallbackAdmin = email === 'developerashish.canada@gmail.com';
 
     if (foundUser || fallbackAdmin) {
@@ -115,7 +107,6 @@ export default function App() {
     highSeas: 'No'
   });
 
-  // Role-Based Filtering
   const visibleSteps = useMemo(() => {
     if (isAdmin) return steps;
     return steps.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail?.toLowerCase());
@@ -158,23 +149,44 @@ export default function App() {
     return list;
   }, [visibleSteps, queueStatusFilter, queueScope, isAdmin, currentUserEmail]);
 
-  // Handle Playbook Rule Edits (Admin Only)
+  // Playbook & User Management Handlers
   const handlePlaybookChange = (index, field, value) => {
     const updated = [...stepMaster];
     updated[index][field] = value;
     setStepMaster(updated);
   };
 
+  const handleUserChange = (index, field, value) => {
+    const updated = [...authorizedUsers];
+    updated[index][field] = value;
+    setAuthorizedUsers(updated);
+  };
+
+  const handleAddUser = () => {
+    setAuthorizedUsers([...authorizedUsers, { email: '', role: 'user' }]);
+  };
+
+  const handleRemoveUser = (index) => {
+    setAuthorizedUsers(authorizedUsers.filter((_, i) => i !== index));
+  };
+
   const savePlaybookRules = async () => {
     const payload = {
       action: 'updatePlaybook',
-      rules: stepMaster.map(m => ({ StepName: m.stepName, Rule: m.rule, EmailID: m.emailId }))
+      rules: stepMaster.map(m => ({ StepName: m.stepName, Rule: m.rule, EmailID: m.emailId })),
+      users: authorizedUsers.map(u => ({ Email: u.email, Role: u.role }))
     };
     try {
-      await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
-      alert("Playbook rules saved successfully!");
+      const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const json = await response.json();
+      if (json.status === 'success') {
+        alert("Playbook rules and user access saved successfully!");
+      } else {
+        alert("Error: " + json.message);
+      }
     } catch (err) {
       console.error("Failed to save rules", err);
+      alert("Failed to save rules to Google Sheets.");
     }
   };
 
@@ -277,7 +289,6 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
-  // LOGIN SCREEN
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
@@ -293,7 +304,7 @@ export default function App() {
               <label className="text-xs font-semibold text-slate-700 block mb-1">User Email ID</label>
               <input 
                 type="text"
-                placeholder="e.g. user@company.com or gmail"
+                placeholder="e.g. user@company.com"
                 value={loginInput}
                 onChange={(e) => setLoginInput(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg p-3 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -316,7 +327,6 @@ export default function App() {
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 border-x border-slate-100 flex flex-col justify-between select-none">
       
-      {/* HEADER BAR WITH USER SESSION */}
       <div className="bg-slate-900 text-white px-4 py-2.5 text-xs flex justify-between items-center">
         <div className="flex items-center gap-1.5">
           {isAdmin ? <Shield className="w-3.5 h-3.5 text-amber-400" /> : <User className="w-3.5 h-3.5 text-brand-400" />}
@@ -349,7 +359,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Clickable & Filtering Metric Grid */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div 
                 onClick={() => { setDealFilter('all'); setActiveTab('deals'); }}
@@ -557,46 +566,93 @@ export default function App() {
           </div>
         )}
 
-        {/* PLAYBOOK TAB (ADMIN ONLY - EDITABLE RULES) */}
+        {/* PLAYBOOK TAB (ADMIN ONLY - EDITABLE RULES & USER MANAGEMENT) */}
         {activeTab === 'playbook' && isAdmin && (
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h1 className="text-xl font-bold text-slate-900">Playbook &amp; Rules</h1>
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h1 className="text-xl font-bold text-slate-900">Playbook &amp; Access</h1>
               <button 
                 onClick={savePlaybookRules}
                 className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition"
               >
-                <Save className="w-3.5 h-3.5" /> Save Rules
+                <Save className="w-3.5 h-3.5" /> Save All Changes
               </button>
             </div>
-            <p className="text-xs text-slate-500 mb-4">Edit rule offsets (days) and assignees below. New deals will calculate deadlines based on these live rules.</p>
-            
-            <div className="space-y-3">
-              {stepMaster.map((rule, idx) => (
-                <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs space-y-2">
-                  <p className="font-bold text-slate-900">{rule.stepName}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Offset (Days)</label>
-                      <input 
-                        type="number"
-                        value={rule.rule}
-                        onChange={(e) => handlePlaybookChange(idx, 'rule', e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Assignee Email</label>
-                      <input 
-                        type="email"
-                        value={rule.emailId}
-                        onChange={(e) => handlePlaybookChange(idx, 'emailId', e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
-                      />
+
+            {/* USER & ROLE DEFINITION SECTION */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-sm font-bold text-slate-900">User &amp; Role Definitions</h2>
+                <button 
+                  onClick={handleAddUser}
+                  className="text-xs text-brand-600 font-semibold hover:underline flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" /> Add User
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">Define who has access to the app and assign admin or user roles.</p>
+              
+              <div className="space-y-2">
+                {authorizedUsers.map((u, idx) => (
+                  <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs flex items-center gap-2">
+                    <input 
+                      type="text"
+                      placeholder="user@company.com"
+                      value={u.email}
+                      onChange={(e) => handleUserChange(idx, 'email', e.target.value)}
+                      className="flex-1 border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                    />
+                    <select
+                      value={u.role}
+                      onChange={(e) => handleUserChange(idx, 'role', e.target.value)}
+                      className="border border-slate-200 rounded-lg p-2 bg-slate-50 font-semibold text-slate-700"
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button 
+                      onClick={() => handleRemoveUser(idx)}
+                      className="text-slate-400 hover:text-red-600 p-1 transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* STEP RULES & OFFSETS SECTION */}
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 mb-1">Step Offsets &amp; Assignees</h2>
+              <p className="text-xs text-slate-500 mb-3">Edit rule offsets (days) and default assignees below.</p>
+              
+              <div className="space-y-3">
+                {stepMaster.map((rule, idx) => (
+                  <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs space-y-2">
+                    <p className="font-bold text-slate-900">{rule.stepName}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Offset (Days)</label>
+                        <input 
+                          type="number"
+                          value={rule.rule}
+                          onChange={(e) => handlePlaybookChange(idx, 'rule', e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Assignee Email</label>
+                        <input 
+                          type="email"
+                          value={rule.emailId}
+                          onChange={(e) => handlePlaybookChange(idx, 'emailId', e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         )}
