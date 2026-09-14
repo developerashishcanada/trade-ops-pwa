@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutGrid, 
   Ship, 
@@ -31,71 +31,59 @@ const INITIAL_RULES = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('overview'); // overview, deals, queue, playbook
+  const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [queueScope, setQueueScope] = useState('all'); // all, my
+  const [queueScope, setQueueScope] = useState('all'); 
   const currentUserEmail = 'developerashish.canada@gmail.com';
 
-  // Seed Deals Data
-  const [deals, setDeDeals] = useState([
-    {
-      id: '101',
-      buyer: 'Chandan steel',
-      supplier: 'Cronitex',
-      shipmentDate: '2026-09-01',
-      destinationDate: '2026-09-20',
-      highSeas: 'No',
-      status: 'In flight'
-    },
-    {
-      id: '102',
-      buyer: 'xyz',
-      supplier: 'abc',
-      shipmentDate: '2026-09-14',
-      destinationDate: '2026-09-16',
-      highSeas: 'No',
-      status: 'No steps'
-    },
-    {
-      id: '103',
-      buyer: 'jindal',
-      supplier: 'cronitex',
-      shipmentDate: '2026-10-02',
-      destinationDate: '2026-10-25',
-      highSeas: 'No',
-      status: 'No steps'
-    },
-    {
-      id: '104',
-      buyer: 'res',
-      supplier: 'sup',
-      shipmentDate: '2026-10-01',
-      destinationDate: '2026-12-01',
-      highSeas: 'Yes',
-      status: 'In flight'
-    }
-  ]);
+  const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
-  // Seed Steps
-  const [steps, setSteps] = useState([
-    ...INITIAL_RULES.map((rule, idx) => ({
-      id: `101-${rule.id}`,
-      dealId: '101',
-      buyer: 'Chandan steel',
-      stepNumber: rule.id,
-      name: rule.name,
-      assignedEmail: rule.email,
-      dueDate: new Date(2026, 7, 22 + idx * 3).toISOString().split('T')[0],
-      status: 'Pending',
-      actualDate: '',
-      docRef: ''
-    }))
-  ]);
+  // Start with empty arrays; data loads from Google Sheets
+  const [deals, setDeDeals] = useState([]);
+  const [steps, setSteps] = useState([]);
+
+  // Fetch live Deals and Steps on load
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch(API_URL);
+        const json = await response.json();
+        if (json.status === 'success') {
+          const mappedDeals = json.deals.map(d => ({
+            id: d.DealID,
+            buyer: d.Buyer,
+            supplier: d.Supplier,
+            shipmentDate: d.ShipmentDate,
+            destinationDate: d.DestinationDate,
+            highSeas: d.HighSeas,
+            status: 'In flight' 
+          }));
+          
+          const mappedSteps = json.steps.map(s => ({
+            id: s.StepID,
+            dealId: s.DealID,
+            name: s.StepName,
+            assignedEmail: s.AssignedTo,
+            dueDate: s.Deadline,
+            actualDate: s.ActualDate,
+            status: s.Status,
+            docRef: s.DocumentReference
+          }));
+
+          setDeDeals(mappedDeals.reverse());
+          setSteps(mappedSteps);
+        }
+      } catch (error) {
+        console.error("Failed to fetch data", error);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState({
-    id: 'AV-2026-110',
+    id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
     buyer: '',
     supplier: '',
     shipmentDate: '',
@@ -112,41 +100,54 @@ export default function App() {
     return { liveDeals, highSeas, delayedSteps, pendingSteps };
   }, [deals, steps]);
 
-  // Deal Creation Flow
-  const handleCreateDeal = (e) => {
+  // Post new deals to the database schema
+  const handleCreateDeal = async (e) => {
     e.preventDefault();
     if (!formData.id || !formData.buyer || !formData.shipmentDate) return;
 
-    const newDeal = {
-      id: formData.id,
-      buyer: formData.buyer,
-      supplier: formData.supplier || 'Unassigned',
-      shipmentDate: formData.shipmentDate,
-      destinationDate: formData.destinationDate,
-      highSeas: formData.highSeas,
-      status: 'In flight'
+    // Build the Deal record
+    const dbDeal = {
+      DealID: formData.id,
+      Buyer: formData.buyer,
+      Supplier: formData.supplier || 'Unassigned',
+      ShipmentDate: formData.shipmentDate,
+      DestinationDate: formData.destinationDate,
+      HighSeas: formData.highSeas
     };
 
-    // Auto-generate the 12 steps based on Playbook rules
-    const newSteps = INITIAL_RULES.map((rule) => {
+    // Build the 12 Step records
+    const dbSteps = INITIAL_RULES.map((rule) => {
       const baseDate = new Date(formData.shipmentDate);
       baseDate.setDate(baseDate.getDate() + rule.offset);
       return {
-        id: `${formData.id}-${rule.id}`,
-        dealId: formData.id,
-        buyer: formData.buyer,
-        stepNumber: rule.id,
-        name: rule.name,
-        assignedEmail: rule.email,
-        dueDate: baseDate.toISOString().split('T')[0],
-        status: 'Pending',
-        actualDate: '',
-        docRef: ''
+        StepID: `${formData.id}-${rule.id}`,
+        DealID: formData.id,
+        StepName: rule.name,
+        AssignedTo: rule.email,
+        Deadline: baseDate.toISOString().split('T')[0],
+        ActualDate: '',
+        Status: 'Pending',
+        DocumentReference: ''
       };
     });
 
-    setDeDeals([newDeal, ...deals]);
-    setSteps([...steps, ...newSteps]);
+    const payload = {
+      ...dbDeal,
+      steps: dbSteps
+    };
+
+    // Optimistically update UI
+    setDeDeals([{
+      id: dbDeal.DealID, buyer: dbDeal.Buyer, supplier: dbDeal.Supplier, 
+      shipmentDate: dbDeal.ShipmentDate, destinationDate: dbDeal.DestinationDate, 
+      highSeas: dbDeal.HighSeas, status: 'In flight'
+    }, ...deals]);
+    
+    setSteps([...steps, ...dbSteps.map(s => ({
+      id: s.StepID, dealId: s.DealID, name: s.StepName, assignedEmail: s.AssignedTo, 
+      dueDate: s.Deadline, actualDate: s.ActualDate, status: s.Status, docRef: s.DocumentReference
+    }))]);
+    
     setShowAddModal(false);
     setFormData({
       id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -156,6 +157,17 @@ export default function App() {
       destinationDate: '',
       highSeas: 'No'
     });
+
+    // Send to Google Sheets
+    try {
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      });
+    } catch (error) {
+      console.error("Failed to save to Google Sheets", error);
+    }
   };
 
   const selectedDeal = deals.find(d => d.id === selectedDealId);
