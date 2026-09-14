@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutGrid, Ship, CheckSquare, BookOpen, Plus, X, 
-  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Bell
+  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Bell, Shield, User
 } from 'lucide-react';
 
 export default function App() {
@@ -11,12 +11,15 @@ export default function App() {
   const [editingStep, setEditingStep] = useState(null);
   const [queueScope, setQueueScope] = useState('all'); 
   
-  // New Filter States
+  // Role & Access Control State ('admin' | 'user')
+  const [userRole, setUserRole] = useState('admin');
+  const [currentUserEmail, setCurrentUserEmail] = useState('sales@company.com'); // Switchable for testing
+
+  // Filter States
   const [dealFilter, setDealFilter] = useState('all'); // 'all' | 'highSeas'
   const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // 'all' | 'Pending' | 'Delayed'
 
   const [stepMaster, setStepMaster] = useState([]);
-  const currentUserEmail = 'developerashish.canada@gmail.com';
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
@@ -77,33 +80,58 @@ export default function App() {
     highSeas: 'No'
   });
 
+  // Extract all unique assignees from StepMaster for role testing dropdown
+  const availableEmails = useMemo(() => {
+    const emails = stepMaster.map(m => m.emailId);
+    return Array.from(new Set(['sales@company.com', 'satya223@gmail.com', 'docs@company.com', 'ops@company.com', 'finance@company.com', ...emails]));
+  }, [stepMaster]);
+
+  // Role-Based Filtering for Deals and Steps
+  const visibleSteps = useMemo(() => {
+    if (userRole === 'admin') return steps;
+    // Standard users only see steps assigned to their email
+    return steps.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail.toLowerCase());
+  }, [steps, userRole, currentUserEmail]);
+
+  const visibleDealIds = useMemo(() => {
+    if (userRole === 'admin') return new Set(deals.map(d => d.id));
+    // Standard users only see deals that have at least one step assigned to them
+    return new Set(visibleSteps.map(s => s.dealId));
+  }, [deals, visibleSteps, userRole]);
+
+  const visibleDeals = useMemo(() => {
+    if (userRole === 'admin') return deals;
+    return deals.filter(d => visibleDealIds.has(d.id));
+  }, [deals, visibleDealIds, userRole]);
+
   const metrics = useMemo(() => {
-    const liveDeals = deals.length;
-    const highSeas = deals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y').length;
-    const delayedSteps = steps.filter(s => s.status.toLowerCase() === 'delayed').length;
-    const pendingSteps = steps.filter(s => s.status.toLowerCase() === 'pending').length;
+    const liveDeals = visibleDeals.length;
+    const highSeas = visibleDeals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y').length;
+    const delayedSteps = visibleSteps.filter(s => s.status.toLowerCase() === 'delayed').length;
+    const pendingSteps = visibleSteps.filter(s => s.status.toLowerCase() === 'pending').length;
     return { liveDeals, highSeas, delayedSteps, pendingSteps };
-  }, [deals, steps]);
+  }, [visibleDeals, visibleSteps]);
 
   // Filtered Deals List
   const filteredDeals = useMemo(() => {
+    let list = visibleDeals;
     if (dealFilter === 'highSeas') {
-      return deals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y');
+      list = list.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y');
     }
-    return deals;
-  }, [deals, dealFilter]);
+    return list;
+  }, [visibleDeals, dealFilter]);
 
   // Filtered Queue Steps List
   const filteredQueueSteps = useMemo(() => {
-    let list = steps.filter(s => s.status !== 'Done');
+    let list = visibleSteps.filter(s => s.status !== 'Done');
     if (queueStatusFilter !== 'all') {
       list = list.filter(s => s.status.toLowerCase() === queueStatusFilter.toLowerCase());
     }
-    if (queueScope === 'my') {
+    if (userRole === 'admin' && queueScope === 'my') {
       list = list.filter(s => s.assignedEmail.toLowerCase() === currentUserEmail.toLowerCase());
     }
     return list;
-  }, [steps, queueStatusFilter, queueScope, currentUserEmail]);
+  }, [visibleSteps, queueStatusFilter, queueScope, userRole, currentUserEmail]);
 
   const handleCreateDeal = async (e) => {
     e.preventDefault();
@@ -201,16 +229,48 @@ export default function App() {
     }
   };
 
-  const selectedDeal = deals.find(d => d.id === selectedDealId);
-  const selectedDealSteps = steps.filter(s => s.dealId === selectedDealId);
+  const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
+  const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 border-x border-slate-100 flex flex-col justify-between select-none">
+      
+      {/* ACCESS CONTROL BANNER (For simulation/testing roles) */}
+      <div className="bg-slate-900 text-white px-4 py-2 text-xs flex justify-between items-center">
+        <div className="flex items-center gap-1.5">
+          {userRole === 'admin' ? <Shield className="w-3.5 h-3.5 text-amber-400" /> : <User className="w-3.5 h-3.5 text-brand-400" />}
+          <span className="font-semibold capitalize">{userRole} View</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {userRole === 'user' && (
+            <select 
+              value={currentUserEmail} 
+              onChange={(e) => setCurrentUserEmail(e.target.value)}
+              className="bg-slate-800 text-white text-[11px] rounded px-1.5 py-0.5 border border-slate-700 outline-none max-w-[130px] truncate"
+            >
+              {availableEmails.map(em => <option key={em} value={em}>{em}</option>)}
+            </select>
+          )}
+          <button 
+            onClick={() => { 
+              setUserRole(userRole === 'admin' ? 'user' : 'admin');
+              if (userRole === 'admin') setActiveTab('overview');
+            }}
+            className="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-semibold px-2 py-1 rounded transition border border-slate-700"
+          >
+            Switch to {userRole === 'admin' ? 'User' : 'Admin'}
+          </button>
+        </div>
+      </div>
+
       <div className="p-4 flex-1">
         {activeTab === 'overview' && !selectedDealId && (
           <div>
             <div className="flex justify-between items-center mb-4">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Trade Operations Console</h1>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">Trade Operations</h1>
+                <p className="text-[11px] text-slate-400">{userRole === 'admin' ? 'Admin Console' : `Assigned to: ${currentUserEmail}`}</p>
+              </div>
               <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); }} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
                 <span>&rarr;</span> Open deals
               </button>
@@ -251,7 +311,7 @@ export default function App() {
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Pending steps &rarr;</p>
                 <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.pendingSteps}</p>
-                <p className="text-[11px] text-slate-400">Awaiting operator update</p>
+                <p className="text-[11px] text-slate-400">Awaiting update</p>
               </div>
             </div>
 
@@ -260,20 +320,24 @@ export default function App() {
               <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); }} className="text-xs font-semibold text-brand-600 hover:underline">Open queue</button>
             </div>
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
-              {steps.filter(s => s.status !== 'Done').slice(0, 7).map((step) => (
-                <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-slate-400 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
-                      <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+              {visibleSteps.filter(s => s.status !== 'Done').length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">No active items requiring attention.</div>
+              ) : (
+                visibleSteps.filter(s => s.status !== 'Done').slice(0, 7).map((step) => (
+                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-slate-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
+                        <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+                      </div>
                     </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
+                      {step.status}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
-                    {step.status}
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -282,12 +346,13 @@ export default function App() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <h1 className="text-xl font-bold text-slate-900">Deals</h1>
-              <button onClick={() => setShowAddModal(true)} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
-                <Plus className="w-3.5 h-3.5" /> New deal
-              </button>
+              {userRole === 'admin' && (
+                <button onClick={() => setShowAddModal(true)} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
+                  <Plus className="w-3.5 h-3.5" /> New deal
+                </button>
+              )}
             </div>
 
-            {/* Deal Filter Dropdown */}
             <div className="mb-4">
               <label className="text-xs font-medium text-slate-700 block mb-1">Deal filter</label>
               <select 
@@ -295,14 +360,14 @@ export default function App() {
                 onChange={(e) => setDealFilter(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
-                <option value="all">All deals ({deals.length})</option>
+                <option value="all">All assigned deals ({visibleDeals.length})</option>
                 <option value="highSeas">High seas only ({metrics.highSeas})</option>
               </select>
             </div>
 
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden mt-4">
               {filteredDeals.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">No deals match the selected filter.</div>
+                <div className="p-8 text-center text-xs text-slate-400">No deals match the selected criteria.</div>
               ) : (
                 filteredDeals.map((deal) => (
                   <div key={deal.id} onClick={() => setSelectedDealId(deal.id)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
@@ -387,10 +452,11 @@ export default function App() {
                 <select 
                   value={queueScope} 
                   onChange={(e) => setQueueScope(e.target.value)} 
+                  disabled={userRole === 'user'}
                   className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
                 >
-                  <option value="all">All team steps</option>
-                  <option value="my">My assigned steps</option>
+                  <option value="all">{userRole === 'admin' ? 'All team steps' : 'My assigned steps'}</option>
+                  {userRole === 'admin' && <option value="my">My assigned steps</option>}
                 </select>
               </div>
             </div>
@@ -417,9 +483,38 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* PLAYBOOK TAB (ADMIN ONLY) */}
+        {activeTab === 'playbook' && userRole === 'admin' && (
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 mb-3">Playbook &amp; Access Control</h1>
+            <p className="text-xs text-slate-500 mb-4">Manage rule offsets and assignees directly via your StepMaster spreadsheet tab.</p>
+            
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
+                  <tr>
+                    <th className="py-2.5 px-3">Step Name</th>
+                    <th className="py-2.5 px-3">Rule Offset</th>
+                    <th className="py-2.5 px-3 text-right">Assignee Email</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stepMaster.map((rule, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition">
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{rule.stepName}</td>
+                      <td className="py-2.5 px-3 text-slate-500">+{rule.rule} days</td>
+                      <td className="py-2.5 px-3 text-right text-slate-500">{rule.emailId}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* UPDATE STEP MODAL WITH DEADLINE DISPLAY */}
+      {/* UPDATE STEP MODAL */}
       {editingStep && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl animate-in slide-in-from-bottom duration-200">
@@ -476,8 +571,8 @@ export default function App() {
         </div>
       )}
 
-      {/* CREATE DEAL MODAL */}
-      {showAddModal && (
+      {/* CREATE DEAL MODAL (ADMIN ONLY) */}
+      {showAddModal && userRole === 'admin' && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4">
@@ -519,7 +614,7 @@ export default function App() {
       )}
 
       {/* NAV BAR */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-sm border-t border-slate-200 px-6 py-2 flex justify-between items-center z-40">
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-sm border-t border-slate-200 px-6 py-2 flex justify-around items-center z-40">
         <button onClick={() => { setActiveTab('overview'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'overview' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[10px]">Overview</span>
         </button>
@@ -529,6 +624,11 @@ export default function App() {
         <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
         </button>
+        {userRole === 'admin' && (
+          <button onClick={() => { setActiveTab('playbook'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'playbook' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
+            <div className={`p-1 rounded-full ${activeTab === 'playbook' ? 'bg-brand-50 text-brand-600' : ''}`}><BookOpen className="w-5 h-5" /></div><span className="text-[10px]">Playbook</span>
+          </button>
+        )}
       </div>
     </div>
   );
