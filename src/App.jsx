@@ -21,15 +21,13 @@ export default function App() {
   const [queueStatusFilter, setQueueStatusFilter] = useState('all'); 
 
   const [stepMaster, setStepMaster] = useState([]);
+  const [authorizedUsers, setAuthorizedUsers] = useState([]);
   const [deals, setDeDeals] = useState([]);
   const [steps, setSteps] = useState([]);
 
-  // Authorized Admin Emails (You can add more admin emails here)
-  const ADMIN_EMAILS = ['developerashish.canada@gmail.com', 'admin@company.com'];
-
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
-  // Fetch data on load
+  // Fetch data including Users tab on load
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -63,9 +61,16 @@ export default function App() {
             emailId: m.EmailID || 'ops@company.com'
           })).filter(m => m.stepName);
 
+          // Map dynamic Users sheet data (Expecting columns: Email, Role)
+          const mappedUsers = (json.users || []).map(u => ({
+            email: u.Email ? String(u.Email).trim().toLowerCase() : '',
+            role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
+          })).filter(u => u.email);
+
           setDeDeals(mappedDeals.reverse());
           setSteps(mappedSteps);
           setStepMaster(mappedMaster);
+          setAuthorizedUsers(mappedUsers);
         }
       } catch (error) {
         console.error("Failed to fetch data", error);
@@ -74,17 +79,25 @@ export default function App() {
     fetchData();
   }, []);
 
-  // Handle Gmail Login Authentication
+  // Handle Dynamic Login Authentication against 'Users' sheet data
   const handleLogin = (e) => {
     e.preventDefault();
     if (!loginInput || !loginInput.includes('@')) return;
     const email = loginInput.trim().toLowerCase();
-    setCurrentUserEmail(email);
     
-    // Check if email is in ADMIN list or matches sheet assignees configured as admin
-    const adminCheck = ADMIN_EMAILS.includes(email);
-    setIsAdmin(adminCheck);
-    setActiveTab('overview');
+    // Find user in the database list pulled from the Users tab
+    const foundUser = authorizedUsers.find(u => u.email === email);
+    
+    // Fallback default admin if no users sheet is populated yet
+    const fallbackAdmin = email === 'developerashish.canada@gmail.com';
+
+    if (foundUser || fallbackAdmin) {
+      setCurrentUserEmail(email);
+      setIsAdmin(foundUser ? foundUser.role === 'admin' : true);
+      setActiveTab('overview');
+    } else {
+      alert("Access denied. Email not found in the authorized Users sheet.");
+    }
   };
 
   const handleLogout = () => {
@@ -165,7 +178,6 @@ export default function App() {
     }
   };
 
-  // Create Deal using dynamic StepMaster rule offsets
   const handleCreateDeal = async (e) => {
     e.preventDefault();
     if (!formData.id || !formData.buyer || !formData.shipmentDate) return;
@@ -265,7 +277,7 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
-  // LOGIN SCREEN (If not authenticated)
+  // LOGIN SCREEN
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
@@ -274,14 +286,14 @@ export default function App() {
             <Shield className="w-6 h-6" />
           </div>
           <h1 className="text-xl font-bold text-slate-900 mb-1">Trade Operations Console</h1>
-          <p className="text-xs text-slate-500 mb-6">Sign in with your Gmail account to access your assigned workflows.</p>
+          <p className="text-xs text-slate-500 mb-6">Enter your authorized email address to access your workflows.</p>
 
           <form onSubmit={handleLogin} className="space-y-3 text-left">
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Gmail Address</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">User Email ID</label>
               <input 
-                type="email"
-                placeholder="e.g. developerashish.canada@gmail.com"
+                type="text"
+                placeholder="e.g. user@company.com or gmail"
                 value={loginInput}
                 onChange={(e) => setLoginInput(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg p-3 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -292,10 +304,10 @@ export default function App() {
               type="submit"
               className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm"
             >
-              Sign In with Google
+              Sign In
             </button>
           </form>
-          <p className="text-[10px] text-slate-400 mt-4">Authorized admin emails are automatically granted management privileges.</p>
+          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list.</p>
         </div>
       </div>
     );
