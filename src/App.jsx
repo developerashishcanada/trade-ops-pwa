@@ -23,10 +23,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  
-  // Step Update State
   const [editingStep, setEditingStep] = useState(null);
-  
   const [queueScope, setQueueScope] = useState('all'); 
   const currentUserEmail = 'developerashish.canada@gmail.com';
 
@@ -35,22 +32,32 @@ export default function App() {
   const [deals, setDeDeals] = useState([]);
   const [steps, setSteps] = useState([]);
 
+  // Fetch existing data from Google Sheet on load / refresh
   useEffect(() => {
     const fetchData = async () => {
       try {
         const response = await fetch(API_URL);
         const json = await response.json();
         if (json.status === 'success') {
-          const mappedDeals = json.deals.map(d => ({
-            id: d.DealID, buyer: d.Buyer, supplier: d.Supplier,
-            shipmentDate: d.ShipmentDate, destinationDate: d.DestinationDate,
-            highSeas: d.HighSeas, status: 'In flight' 
+          const mappedDeals = (json.deals || []).map(d => ({
+            id: d.DealID ? String(d.DealID).trim() : '',
+            buyer: d.Buyer || '',
+            supplier: d.Supplier || '',
+            shipmentDate: d.ShipmentDate || '',
+            destinationDate: d.DestinationDate || '',
+            highSeas: d.HighSeas || 'No',
+            status: 'In flight' 
           })).filter(d => d.id); 
           
-          const mappedSteps = json.steps.map(s => ({
-            id: s.StepID, dealId: s.DealID, name: s.StepName,
-            assignedEmail: s.AssignedTo, dueDate: s.Deadline, actualDate: s.ActualDate || '',
-            status: s.Status || 'Pending', docRef: s.DocumentReference || ''
+          const mappedSteps = (json.steps || []).map(s => ({
+            id: s.StepID ? String(s.StepID).trim() : '',
+            dealId: s.DealID ? String(s.DealID).trim() : '',
+            name: s.StepName || '',
+            assignedEmail: s.AssignedTo || '',
+            dueDate: s.Deadline || '',
+            actualDate: s.ActualDate || '',
+            status: s.Status || 'Pending',
+            docRef: s.DocumentReference || ''
           })).filter(s => s.id);
 
           setDeDeals(mappedDeals.reverse());
@@ -65,7 +72,11 @@ export default function App() {
 
   const [formData, setFormData] = useState({
     id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
-    buyer: '', supplier: '', shipmentDate: '', destinationDate: '', highSeas: 'No'
+    buyer: '',
+    supplier: '',
+    shipmentDate: '',
+    destinationDate: '',
+    highSeas: 'No'
   });
 
   const metrics = useMemo(() => {
@@ -81,17 +92,26 @@ export default function App() {
     if (!formData.id || !formData.buyer || !formData.shipmentDate) return;
 
     const dbDeal = {
-      DealID: formData.id, Buyer: formData.buyer, Supplier: formData.supplier || 'Unassigned',
-      ShipmentDate: formData.shipmentDate, DestinationDate: formData.destinationDate, HighSeas: formData.highSeas
+      DealID: formData.id,
+      Buyer: formData.buyer,
+      Supplier: formData.supplier || 'Unassigned',
+      ShipmentDate: formData.shipmentDate,
+      DestinationDate: formData.destinationDate,
+      HighSeas: formData.highSeas
     };
 
     const dbSteps = INITIAL_RULES.map((rule) => {
       const baseDate = new Date(formData.shipmentDate);
       baseDate.setDate(baseDate.getDate() + rule.offset);
       return {
-        StepID: `${formData.id}-${rule.id}`, DealID: formData.id, StepName: rule.name,
-        AssignedTo: rule.email, Deadline: baseDate.toISOString().split('T')[0],
-        ActualDate: '', Status: 'Pending', DocumentReference: ''
+        StepID: `${formData.id}-${rule.id}`,
+        DealID: formData.id,
+        StepName: rule.name,
+        AssignedTo: rule.email,
+        Deadline: baseDate.toISOString().split('T')[0],
+        ActualDate: '',
+        Status: 'Pending',
+        DocumentReference: ''
       };
     });
 
@@ -109,7 +129,14 @@ export default function App() {
     }))]);
     
     setShowAddModal(false);
-    setFormData({ id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`, buyer: '', supplier: '', shipmentDate: '', destinationDate: '', highSeas: 'No' });
+    setFormData({
+      id: `AV-2026-${Math.floor(100 + Math.random() * 900)}`,
+      buyer: '',
+      supplier: '',
+      shipmentDate: '',
+      destinationDate: '',
+      highSeas: 'No'
+    });
 
     try {
       await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
@@ -122,7 +149,6 @@ export default function App() {
     e.preventDefault();
     if (!editingStep) return;
 
-    // Optimistically update the UI
     setSteps(steps.map(s => s.id === editingStep.id ? editingStep : s));
     
     const payload = {
@@ -133,9 +159,8 @@ export default function App() {
       DocumentReference: editingStep.docRef
     };
 
-    setEditingStep(null); // Close modal
+    setEditingStep(null);
 
-    // Send to database
     try {
       await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
     } catch (error) {
@@ -149,7 +174,6 @@ export default function App() {
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 border-x border-slate-100 flex flex-col justify-between select-none">
       <div className="p-4 flex-1">
-        {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && !selectedDealId && (
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -203,7 +227,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: DEALS */}
         {activeTab === 'deals' && !selectedDealId && (
           <div>
             <div className="flex justify-between items-center mb-3">
@@ -229,7 +252,6 @@ export default function App() {
           </div>
         )}
 
-        {/* DEAL TIMELINE */}
         {selectedDealId && selectedDeal && (
           <div>
             <div className="flex items-center gap-1 text-xs text-slate-500 mb-2">
@@ -239,6 +261,13 @@ export default function App() {
             </div>
             <h1 className="text-lg font-bold text-slate-900 mb-3">{selectedDeal.id} &middot; {selectedDeal.buyer}</h1>
             
+            <div className="border border-slate-200 rounded-xl p-4 bg-white mb-4 text-xs space-y-2">
+              <p><span className="font-semibold text-slate-500">Supplier:</span> {selectedDeal.supplier}</p>
+              <p><span className="font-semibold text-slate-500">Shipment Date:</span> {selectedDeal.shipmentDate}</p>
+              <p><span className="font-semibold text-slate-500">Destination Date:</span> {selectedDeal.destinationDate || 'N/A'}</p>
+              <p><span className="font-semibold text-slate-500">High Seas:</span> {selectedDeal.highSeas}</p>
+            </div>
+
             <div className="flex justify-between items-center mb-3 mt-5">
               <h2 className="text-sm font-bold text-slate-900">Lifecycle steps</h2>
               <span className="text-xs text-slate-400">{selectedDealSteps.length} steps</span>
@@ -267,7 +296,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: QUEUE */}
         {activeTab === 'queue' && (
           <div>
             <h1 className="text-xl font-bold text-slate-900 mb-3">My Queue</h1>
@@ -344,18 +372,42 @@ export default function App() {
         </div>
       )}
 
-      {/* CREATE DEAL MODAL */}
+      {/* CREATE DEAL MODAL WITH ALL FIELDS RESTORED */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
-          <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl animate-in slide-in-from-bottom duration-200">
+          <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-sm font-bold text-slate-900">Add a new deal</h2>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
             </div>
             <form onSubmit={handleCreateDeal} className="space-y-3 text-xs">
-              <div><label className="font-semibold text-slate-700 block mb-1">Deal ID</label><input type="text" value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required /></div>
-              <div><label className="font-semibold text-slate-700 block mb-1">Buyer</label><input type="text" value={formData.buyer} onChange={(e) => setFormData({...formData, buyer: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required /></div>
-              <div><label className="font-semibold text-slate-700 block mb-1">Shipment date</label><input type="date" value={formData.shipmentDate} onChange={(e) => setFormData({...formData, shipmentDate: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required /></div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Deal ID</label>
+                <input type="text" value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Buyer</label>
+                <input type="text" placeholder="Buyer desk" value={formData.buyer} onChange={(e) => setFormData({...formData, buyer: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Supplier</label>
+                <input type="text" placeholder="Supplier desk" value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Shipment date</label>
+                <input type="date" value={formData.shipmentDate} onChange={(e) => setFormData({...formData, shipmentDate: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Destination date</label>
+                <input type="date" value={formData.destinationDate} onChange={(e) => setFormData({...formData, destinationDate: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">High-seas handling</label>
+                <select value={formData.highSeas} onChange={(e) => setFormData({...formData, highSeas: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50">
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </div>
               <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-lg mt-2">+ Create deal</button>
             </form>
           </div>
