@@ -27,7 +27,7 @@ export default function App() {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
-  // Fetch operational data ONLY after user successfully signs in
+  // Fetch heavy operational data ONLY after user successfully signs in
   useEffect(() => {
     if (!currentUserEmail) return;
 
@@ -80,7 +80,7 @@ export default function App() {
     fetchData();
   }, [currentUserEmail]);
 
-  // Handle login by querying the API on-demand after email input
+  // Lightning-fast login call using ?action=login endpoint
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -92,8 +92,7 @@ export default function App() {
     setIsAuthenticating(true);
 
     try {
-      // Fetch users list from sheet on-demand during login
-      const response = await fetch(API_URL);
+      const response = await fetch(`${API_URL}?action=login`);
       const json = await response.json();
       
       let usersList = [];
@@ -119,7 +118,6 @@ export default function App() {
       }
     } catch (err) {
       console.error("Authentication check failed", err);
-      // Fallback check for trusted admins even if network fails
       const hardcodedAdmins = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
       if (hardcodedAdmins.includes(email)) {
         setCurrentUserEmail(email);
@@ -359,7 +357,6 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
-  // LOGIN SCREEN (No background API call on mount)
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
