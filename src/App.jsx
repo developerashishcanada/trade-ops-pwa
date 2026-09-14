@@ -4,27 +4,13 @@ import {
   AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Bell
 } from 'lucide-react';
 
-const INITIAL_RULES = [
-  { id: 1, name: 'Deal Closure', offset: 7, email: 'sales@company.com' },
-  { id: 2, name: 'Loading', offset: 14, email: 'satya223@gmail.com' },
-  { id: 3, name: 'PSIC', offset: 21, email: 'docs@company.com' },
-  { id: 4, name: 'Loaded to Ship', offset: 28, email: 'ops@company.com' },
-  { id: 5, name: 'Draft Bill of Lading (BL)', offset: 35, email: 'docs@company.com' },
-  { id: 6, name: 'High Seas Contract', offset: 42, email: 'legal@company.com' },
-  { id: 7, name: 'Port Change (If Needed)', offset: 49, email: 'ops@company.com' },
-  { id: 8, name: 'Telex Release / Final BL', offset: 56, email: 'docs@company.com' },
-  { id: 9, name: 'Custom Clearance', offset: 63, email: 'satya223@gmail.com' },
-  { id: 10, name: 'Make Invoice', offset: 70, email: 'finance@company.com' },
-  { id: 11, name: 'Receive Buyer Payment', offset: 77, email: 'finance@company.com' },
-  { id: 12, name: 'Pay Supplier (Close Deal)', offset: 84, email: 'finance@company.com' }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStep, setEditingStep] = useState(null);
   const [queueScope, setQueueScope] = useState('all'); 
+  const [stepMaster, setStepMaster] = useState([]);
   const currentUserEmail = 'developerashish.canada@gmail.com';
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
@@ -32,7 +18,7 @@ export default function App() {
   const [deals, setDeDeals] = useState([]);
   const [steps, setSteps] = useState([]);
 
-  // Fetch existing data from Google Sheet on load / refresh
+  // Fetch existing data and StepMaster rules from Google Sheet on load / refresh
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -40,28 +26,35 @@ export default function App() {
         const json = await response.json();
         if (json.status === 'success') {
           const mappedDeals = (json.deals || []).map(d => ({
-            id: d.DealID ? String(d.DealID).trim() : '',
+            id: d.DealID !== undefined && d.DealID !== null ? String(d.DealID).trim() : '',
             buyer: d.Buyer || '',
             supplier: d.Supplier || '',
-            shipmentDate: d.ShipmentDate || '',
-            destinationDate: d.DestinationDate || '',
+            shipmentDate: d.ShipmentDate ? String(d.ShipmentDate).split('T')[0] : '',
+            destinationDate: d.DestinationDate ? String(d.DestinationDate).split('T')[0] : '',
             highSeas: d.HighSeas || 'No',
             status: 'In flight' 
           })).filter(d => d.id); 
           
           const mappedSteps = (json.steps || []).map(s => ({
-            id: s.StepID ? String(s.StepID).trim() : '',
-            dealId: s.DealID ? String(s.DealID).trim() : '',
+            id: s.StepID !== undefined && s.StepID !== null ? String(s.StepID).trim() : '',
+            dealId: s.DealID !== undefined && s.DealID !== null ? String(s.DealID).trim() : '',
             name: s.StepName || '',
             assignedEmail: s.AssignedTo || '',
-            dueDate: s.Deadline || '',
-            actualDate: s.ActualDate || '',
+            dueDate: s.Deadline ? String(s.Deadline).split('T')[0] : '',
+            actualDate: s.ActualDate ? String(s.ActualDate).split('T')[0] : '',
             status: s.Status || 'Pending',
             docRef: s.DocumentReference || ''
           })).filter(s => s.id);
 
+          const mappedMaster = (json.stepMaster || []).map(m => ({
+            stepName: m.StepName || '',
+            rule: Number(m.Rule) || 0,
+            emailId: m.EmailID || 'ops@company.com'
+          })).filter(m => m.stepName);
+
           setDeDeals(mappedDeals.reverse());
           setSteps(mappedSteps);
+          setStepMaster(mappedMaster);
         }
       } catch (error) {
         console.error("Failed to fetch data", error);
@@ -81,7 +74,7 @@ export default function App() {
 
   const metrics = useMemo(() => {
     const liveDeals = deals.length;
-    const highSeas = deals.filter(d => d.highSeas === 'Yes').length;
+    const highSeas = deals.filter(d => String(d.highSeas).toLowerCase() === 'yes' || String(d.highSeas).toLowerCase() === 'y').length;
     const delayedSteps = steps.filter(s => s.status === 'Delayed').length;
     const pendingSteps = steps.filter(s => s.status === 'Pending').length;
     return { liveDeals, highSeas, delayedSteps, pendingSteps };
@@ -100,14 +93,30 @@ export default function App() {
       HighSeas: formData.highSeas
     };
 
-    const dbSteps = INITIAL_RULES.map((rule) => {
+    // Dynamically build steps using StepMaster data from Google Sheets if available, with robust fallback
+    const rulesToUse = stepMaster.length > 0 ? stepMaster : [
+      { stepName: 'Deal Closure', rule: 7, emailId: 'sales@company.com' },
+      { stepName: 'Loading', rule: 14, emailId: 'satya223@gmail.com' },
+      { stepName: 'PSIC', rule: 21, emailId: 'docs@company.com' },
+      { stepName: 'Loaded to Ship', rule: 28, emailId: 'ops@company.com' },
+      { stepName: 'Draft Bill of Lading (BL)', rule: 35, emailId: 'docs@company.com' },
+      { stepName: 'High Seas Contract', rule: 42, emailId: 'legal@company.com' },
+      { stepName: 'Port Change (If Needed)', rule: 49, emailId: 'ops@company.com' },
+      { stepName: 'Telex Release / Final BL', rule: 56, emailId: 'docs@company.com' },
+      { stepName: 'Custom Clearance', rule: 63, emailId: 'satya223@gmail.com' },
+      { stepName: 'Make Invoice', rule: 70, emailId: 'finance@company.com' },
+      { stepName: 'Receive Buyer Payment', rule: 77, emailId: 'finance@company.com' },
+      { stepName: 'Pay Supplier (Close Deal)', rule: 84, emailId: 'finance@company.com' }
+    ];
+
+    const dbSteps = rulesToUse.map((rule, idx) => {
       const baseDate = new Date(formData.shipmentDate);
-      baseDate.setDate(baseDate.getDate() + rule.offset);
+      baseDate.setDate(baseDate.getDate() + (Number(rule.rule) || (idx * 7)));
       return {
-        StepID: `${formData.id}-${rule.id}`,
+        StepID: `${formData.id}-${idx + 1}`,
         DealID: formData.id,
-        StepName: rule.name,
-        AssignedTo: rule.email,
+        StepName: rule.stepName,
+        AssignedTo: rule.emailId,
         Deadline: baseDate.toISOString().split('T')[0],
         ActualDate: '',
         Status: 'Pending',
@@ -281,6 +290,7 @@ export default function App() {
                       <p className="text-xs font-bold text-slate-900 leading-snug">{step.name}</p>
                       <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
                       {step.actualDate && <p className="text-[10px] text-brand-600 mt-0.5 font-medium">Completed: {step.actualDate}</p>}
+                      {step.docRef && <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Ref: {step.docRef}</p>}
                     </div>
                   </div>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
@@ -343,6 +353,7 @@ export default function App() {
                   <option value="Pending">Pending</option>
                   <option value="Done">Done</option>
                   <option value="Delayed">Delayed</option>
+                  <option value="Ontime">Ontime</option>
                 </select>
               </div>
               <div>
@@ -372,7 +383,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CREATE DEAL MODAL WITH ALL FIELDS RESTORED */}
+      {/* CREATE DEAL MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
@@ -420,7 +431,7 @@ export default function App() {
           <div className={`p-1 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[10px]">Overview</span>
         </button>
         <button onClick={() => { setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-          <div className={`p-1 rounded-full ${activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
+          <div className={`p-1 rounded-full ${activeTab => activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
         </button>
         <button onClick={() => { setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
           <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
