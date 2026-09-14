@@ -4,6 +4,25 @@ import {
   AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save, Trash2, Loader2
 } from 'lucide-react';
 
+// The StepsMaster sheet's `Rule` column stores a human-readable offset like
+// "ShipmentDate +7" or "ShipmentDate -3" rather than a bare number.
+// parseOffsetDays pulls the signed integer out of that text (and still
+// accepts a plain number/numeric-string for forward-compatibility if the
+// sheet is ever simplified). formatOffsetDays does the reverse for writing
+// back to the sheet, so the Playbook tab can keep editing a plain number
+// while the sheet keeps its readable "ShipmentDate +N" convention.
+function parseOffsetDays(rawRule) {
+  if (rawRule === null || rawRule === undefined || rawRule === '') return 0;
+  if (typeof rawRule === 'number') return rawRule;
+  const match = String(rawRule).match(/(-?\d+)\s*$/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function formatOffsetDays(days) {
+  const n = Number(days) || 0;
+  return `ShipmentDate ${n >= 0 ? '+' : ''}${n}`;
+}
+
 export default function App() {
   // Persistent Session via localStorage so refreshes don't log out
   const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('trade_user_email') || null);
@@ -60,9 +79,15 @@ export default function App() {
           docRef: s.DocumentReference || ''
         })).filter(s => s.id);
 
+        // NOTE: the StepsMaster sheet's `Rule` column is a human-readable string
+        // like "ShipmentDate +7" or "ShipmentDate -3", not a plain number.
+        // `Number("ShipmentDate +7")` is NaN, which silently became 0 for
+        // every rule — that's why offsets never showed and deadlines were
+        // always calculated as "shipment date + 0". Pull the signed integer
+        // out of the string instead.
         const mappedMaster = (json.stepMaster || []).map(m => ({
           stepName: m.StepName || '',
-          rule: Number(m.Rule) || 0,
+          rule: parseOffsetDays(m.Rule),
           emailId: m.EmailID ? String(m.EmailID).trim().toLowerCase() : 'ops@company.com'
         })).filter(m => m.stepName);
 
@@ -261,7 +286,7 @@ export default function App() {
     // truncate-and-rewrite StepMaster/Users with garbage/empty entries.
     const cleanRules = stepMaster
       .filter(m => m.stepName && String(m.stepName).trim())
-      .map(m => ({ StepName: m.stepName.trim(), Rule: Number(m.rule) || 0, EmailID: (m.emailId || '').trim() }));
+      .map(m => ({ StepName: m.stepName.trim(), Rule: formatOffsetDays(m.rule), EmailID: (m.emailId || '').trim() }));
     const cleanUsers = authorizedUsers
       .filter(u => u.email && String(u.email).trim())
       .map(u => ({ Email: u.email.trim().toLowerCase(), Role: (u.role || 'user').trim().toLowerCase() }));
