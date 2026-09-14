@@ -25,68 +25,85 @@ export default function App() {
 
   const [stepMaster, setStepMaster] = useState([]);
   const [authorizedUsers, setAuthorizedUsers] = useState([]);
-  const [deals, setDeDeals] = useState([]);
+  const [deals, setDeals] = useState([]);
   const [steps, setSteps] = useState([]);
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
+  // Extracted so it can be re-run after writes (createDeal / updateStep /
+  // savePlaybookRules) to confirm the sheet actually reflects the change,
+  // instead of only trusting optimistic local state.
+  const fetchData = React.useCallback(async () => {
+    setIsLoadingData(true);
+    try {
+      const response = await fetch(API_URL);
+      const json = await response.json();
+      if (json.status === 'success') {
+        const mappedDeals = (json.deals || []).map(d => ({
+          id: d.DealID !== undefined && d.DealID !== null ? String(d.DealID).trim() : '',
+          buyer: d.Buyer || '',
+          supplier: d.Supplier || '',
+          shipmentDate: d.ShipmentDate ? String(d.ShipmentDate).split('T')[0] : '',
+          destinationDate: d.DestinationDate ? String(d.DestinationDate).split('T')[0] : '',
+          highSeas: d.HighSeas || 'No',
+          status: 'In flight'
+        })).filter(d => d.id);
+
+        const mappedSteps = (json.steps || []).map(s => ({
+          id: s.StepID !== undefined && s.StepID !== null ? String(s.StepID).trim() : '',
+          dealId: s.DealID !== undefined && s.DealID !== null ? String(s.DealID).trim() : '',
+          name: s.StepName || '',
+          assignedEmail: s.AssignedTo ? String(s.AssignedTo).trim().toLowerCase() : '',
+          dueDate: s.Deadline ? String(s.Deadline).split('T')[0] : '',
+          actualDate: s.ActualDate ? String(s.ActualDate).split('T')[0] : '',
+          status: s.Status || 'Pending',
+          docRef: s.DocumentReference || ''
+        })).filter(s => s.id);
+
+        const mappedMaster = (json.stepMaster || []).map(m => ({
+          stepName: m.StepName || '',
+          rule: Number(m.Rule) || 0,
+          emailId: m.EmailID ? String(m.EmailID).trim().toLowerCase() : 'ops@company.com'
+        })).filter(m => m.stepName);
+
+        const mappedUsers = (json.users || []).map(u => ({
+          email: u.Email ? String(u.Email).trim().toLowerCase() : '',
+          role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
+        })).filter(u => u.email);
+
+        setDeals(mappedDeals.reverse());
+        setSteps(mappedSteps);
+        setStepMaster(mappedMaster);
+        setAuthorizedUsers(mappedUsers);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Failed to fetch data", error);
+      return false;
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, [API_URL]);
+
   // Fetch operational data when authenticated
   useEffect(() => {
     if (!currentUserEmail) return;
-
-    const fetchData = async () => {
-      setIsLoadingData(true);
-      try {
-        const response = await fetch(API_URL);
-        const json = await response.json();
-        if (json.status === 'success') {
-          const mappedDeals = (json.deals || []).map(d => ({
-            id: d.DealID !== undefined && d.DealID !== null ? String(d.DealID).trim() : '',
-            buyer: d.Buyer || '',
-            supplier: d.Supplier || '',
-            shipmentDate: d.ShipmentDate ? String(d.ShipmentDate).split('T')[0] : '',
-            destinationDate: d.DestinationDate ? String(d.DestinationDate).split('T')[0] : '',
-            highSeas: d.HighSeas || 'No',
-            status: 'In flight' 
-          })).filter(d => d.id); 
-          
-          const mappedSteps = (json.steps || []).map(s => ({
-            id: s.StepID !== undefined && s.StepID !== null ? String(s.StepID).trim() : '',
-            dealId: s.DealID !== undefined && s.DealID !== null ? String(s.DealID).trim() : '',
-            name: s.StepName || '',
-            assignedEmail: s.AssignedTo ? String(s.AssignedTo).trim().toLowerCase() : '',
-            dueDate: s.Deadline ? String(s.Deadline).split('T')[0] : '',
-            actualDate: s.ActualDate ? String(s.ActualDate).split('T')[0] : '',
-            status: s.Status || 'Pending',
-            docRef: s.DocumentReference || ''
-          })).filter(s => s.id);
-
-          const mappedMaster = (json.stepMaster || []).map(m => ({
-            stepName: m.StepName || '',
-            rule: Number(m.Rule) || 0,
-            emailId: m.EmailID ? String(m.EmailID).trim().toLowerCase() : 'ops@company.com'
-          })).filter(m => m.stepName);
-
-          const mappedUsers = (json.users || []).map(u => ({
-            email: u.Email ? String(u.Email).trim().toLowerCase() : '',
-            role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
-          })).filter(u => u.email);
-
-          setDeDeals(mappedDeals.reverse());
-          setSteps(mappedSteps);
-          setStepMaster(mappedMaster);
-          setAuthorizedUsers(mappedUsers);
-        }
-      } catch (error) {
-        console.error("Failed to fetch data", error);
-      } finally {
-        setIsLoadingData(false);
-      }
-    };
     fetchData();
-  }, [currentUserEmail]);
+  }, [currentUserEmail, fetchData]);
 
-  // Fast login with ?action=login
+  // Hardcoded failsafe admins so architects are never locked out (per design doc section 4)
+  const HARDCODED_ADMINS = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
+
+  // Fast login with ?action=login&email=...
+  // NOTE (bugfix): the previous version never sent the `email` query param, so the
+  // server-side Users-sheet scan always received an empty string and could never
+  // match a real user. On top of that, the client tried to re-validate the user
+  // against a local `usersList` that the login endpoint never actually returns
+  // (only the full hydration endpoint returns `users`) — so only the two
+  // hardcoded admin emails could ever log in, and everyone else either waited
+  // out a network round-trip just to see "Access denied" or hit the retry path.
+  // Fix: send the email, and trust the `role` the server returns directly.
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -98,24 +115,13 @@ export default function App() {
     setIsAuthenticating(true);
 
     try {
-      const response = await fetch(`${API_URL}?action=login`);
+      const response = await fetch(`${API_URL}?action=login&email=${encodeURIComponent(email)}`);
       const json = await response.json();
-      
-      let usersList = [];
-      if (json.status === 'success' && json.users) {
-        usersList = json.users.map(u => ({
-          email: u.Email ? String(u.Email).trim().toLowerCase() : '',
-          role: u.Role ? String(u.Role).trim().toLowerCase() : 'user'
-        })).filter(u => u.email);
-        setAuthorizedUsers(usersList);
-      }
 
-      const hardcodedAdmins = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
-      const isHardcodedAdmin = hardcodedAdmins.includes(email);
-      const foundUser = usersList.find(u => u.email === email);
+      const isHardcodedAdmin = HARDCODED_ADMINS.includes(email);
 
-      if (isHardcodedAdmin || foundUser) {
-        const adminStatus = isHardcodedAdmin || foundUser.role === 'admin';
+      if (json.status === 'success' || isHardcodedAdmin) {
+        const adminStatus = isHardcodedAdmin || String(json.role).toLowerCase() === 'admin';
         setCurrentUserEmail(email);
         setIsAdmin(adminStatus);
         localStorage.setItem('trade_user_email', email);
@@ -127,8 +133,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Authentication check failed", err);
-      const hardcodedAdmins = ['satya223@gmail.com', 'developerashish.canada@gmail.com'];
-      if (hardcodedAdmins.includes(email)) {
+      if (HARDCODED_ADMINS.includes(email)) {
         setCurrentUserEmail(email);
         setIsAdmin(true);
         localStorage.setItem('trade_user_email', email);
@@ -231,16 +236,15 @@ export default function App() {
     return list;
   }, [visibleSteps, queueStatusFilter, queueScope, isAdmin, currentUserEmail]);
 
+  // Bugfix: previously spread the array but mutated the row object in place
+  // (`updated[index][field] = value`), which is a shallow copy and can cause
+  // React to skip re-renders / stale reads on fast edits. Copy the row too.
   const handlePlaybookChange = (index, field, value) => {
-    const updated = [...stepMaster];
-    updated[index][field] = value;
-    setStepMaster(updated);
+    setStepMaster(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
   };
 
   const handleUserChange = (index, field, value) => {
-    const updated = [...authorizedUsers];
-    updated[index][field] = value;
-    setAuthorizedUsers(updated);
+    setAuthorizedUsers(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
   };
 
   const handleAddUser = () => {
@@ -253,16 +257,26 @@ export default function App() {
 
   const savePlaybookRules = async () => {
     setIsLoadingData(true);
-    const payload = {
-      action: 'updatePlaybook',
-      rules: stepMaster.map(m => ({ StepName: m.stepName, Rule: m.rule, EmailID: m.emailId })),
-      users: authorizedUsers.map(u => ({ Email: u.email, Role: u.role }))
-    };
+    // Guard against blank rows (e.g. an added-but-unfilled user row) so we never
+    // truncate-and-rewrite StepMaster/Users with garbage/empty entries.
+    const cleanRules = stepMaster
+      .filter(m => m.stepName && String(m.stepName).trim())
+      .map(m => ({ StepName: m.stepName.trim(), Rule: Number(m.rule) || 0, EmailID: (m.emailId || '').trim() }));
+    const cleanUsers = authorizedUsers
+      .filter(u => u.email && String(u.email).trim())
+      .map(u => ({ Email: u.email.trim().toLowerCase(), Role: (u.role || 'user').trim().toLowerCase() }));
+
+    const payload = { action: 'updatePlaybook', rules: cleanRules, users: cleanUsers };
     try {
       const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
       const json = await response.json();
       if (json.status === 'success') {
-        alert("Playbook rules and user access saved successfully!");
+        // Re-pull from the sheet so the UI shows the confirmed, persisted state
+        // rather than just the optimistic local edits.
+        const refreshed = await fetchData();
+        alert(refreshed
+          ? "Playbook rules and user access saved successfully!"
+          : "Saved, but couldn't confirm the refresh — reload to verify.");
       } else {
         alert("Error: " + json.message);
       }
@@ -319,7 +333,7 @@ export default function App() {
 
     const payload = { action: 'createDeal', ...dbDeal, steps: dbSteps };
 
-    setDeDeals([{
+    setDeals([{
       id: dbDeal.DealID, buyer: dbDeal.Buyer, supplier: dbDeal.Supplier, 
       shipmentDate: dbDeal.ShipmentDate, destinationDate: dbDeal.DestinationDate, 
       highSeas: dbDeal.HighSeas, status: 'In flight'
@@ -341,9 +355,17 @@ export default function App() {
     });
 
     try {
-      await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const json = await response.json();
+      if (json.status !== 'success') {
+        console.error("Server rejected deal creation:", json.message);
+        alert("The deal was saved locally but the server reported an error: " + json.message + "\nReloading to resync...");
+        fetchData();
+      }
     } catch (error) {
       console.error("Failed to save to Google Sheets", error);
+      alert("Network error while saving the deal. It may not have been saved — reloading to resync.");
+      fetchData();
     }
   };
 
@@ -364,9 +386,15 @@ export default function App() {
     setEditingStep(null);
 
     try {
-      await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const json = await response.json();
+      if (json.status !== 'success') {
+        console.error("Server rejected step update:", json.message);
+        fetchData();
+      }
     } catch (error) {
       console.error("Failed to update step", error);
+      fetchData();
     }
   };
 
