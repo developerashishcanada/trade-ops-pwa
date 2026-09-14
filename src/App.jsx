@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutGrid, Ship, CheckSquare, BookOpen, Plus, X, 
-  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save, Trash2
+  AlertTriangle, FileText, Calendar, ChevronRight, CheckCircle2, Shield, User, LogOut, Save, Trash2, Loader2
 } from 'lucide-react';
 
 export default function App() {
-  const [currentUserEmail, setCurrentUserEmail] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  // Persistent Session via localStorage so refreshes don't log out
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('trade_user_email') || null);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('trade_is_admin') === 'true');
+  
   const [loginInput, setLoginInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   const [activeTab, setActiveTab] = useState('overview'); 
   const [selectedDealId, setSelectedDealId] = useState(null);
@@ -27,11 +30,12 @@ export default function App() {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbw9MdLjtVh_clisQj_FS9WrOiLZDMEzTca-XHD4S1Ehvgk7BVNoiBWLAs3d87wbyRnH/exec";
 
-  // Fetch heavy operational data ONLY after user successfully signs in
+  // Fetch operational data when authenticated
   useEffect(() => {
     if (!currentUserEmail) return;
 
     const fetchData = async () => {
+      setIsLoadingData(true);
       try {
         const response = await fetch(API_URL);
         const json = await response.json();
@@ -75,12 +79,14 @@ export default function App() {
         }
       } catch (error) {
         console.error("Failed to fetch data", error);
+      } finally {
+        setIsLoadingData(false);
       }
     };
     fetchData();
   }, [currentUserEmail]);
 
-  // Lightning-fast login call using ?action=login endpoint
+  // Fast login with ?action=login
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -109,8 +115,11 @@ export default function App() {
       const foundUser = usersList.find(u => u.email === email);
 
       if (isHardcodedAdmin || foundUser) {
+        const adminStatus = isHardcodedAdmin || foundUser.role === 'admin';
         setCurrentUserEmail(email);
-        setIsAdmin(isHardcodedAdmin || foundUser.role === 'admin');
+        setIsAdmin(adminStatus);
+        localStorage.setItem('trade_user_email', email);
+        localStorage.setItem('trade_is_admin', String(adminStatus));
         setActiveTab('overview');
         setLoginInput('');
       } else {
@@ -122,6 +131,8 @@ export default function App() {
       if (hardcodedAdmins.includes(email)) {
         setCurrentUserEmail(email);
         setIsAdmin(true);
+        localStorage.setItem('trade_user_email', email);
+        localStorage.setItem('trade_is_admin', 'true');
         setActiveTab('overview');
         setLoginInput('');
       } else {
@@ -135,6 +146,8 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUserEmail(null);
     setIsAdmin(false);
+    localStorage.removeItem('trade_user_email');
+    localStorage.removeItem('trade_is_admin');
     setLoginInput('');
     setLoginError('');
   };
@@ -239,6 +252,7 @@ export default function App() {
   };
 
   const savePlaybookRules = async () => {
+    setIsLoadingData(true);
     const payload = {
       action: 'updatePlaybook',
       rules: stepMaster.map(m => ({ StepName: m.stepName, Rule: m.rule, EmailID: m.emailId })),
@@ -255,6 +269,8 @@ export default function App() {
     } catch (err) {
       console.error("Failed to save rules", err);
       alert("Failed to save rules to Google Sheets.");
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -357,55 +373,59 @@ export default function App() {
   const selectedDeal = visibleDeals.find(d => d.id === selectedDealId);
   const selectedDealSteps = visibleSteps.filter(s => s.dealId === selectedDealId);
 
+  // LOGIN SCREEN
   if (!currentUserEmail) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6 border-x border-slate-200">
-        <div className="bg-white p-6 rounded-2xl shadow-xl w-full border border-slate-100 text-center">
-          <div className="w-12 h-12 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-6 h-6" />
+        <div className="bg-white p-7 rounded-2xl shadow-xl w-full border border-slate-100 text-center">
+          <div className="w-14 h-14 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-7 h-7" />
           </div>
           <h1 className="text-xl font-bold text-slate-900 mb-1">Trade Operations Console</h1>
-          <p className="text-xs text-slate-500 mb-6">Enter your authorized email address to access your workflows.</p>
+          <p className="text-sm text-slate-500 mb-6">Enter your authorized email address to access your workflows.</p>
 
-          <form onSubmit={handleLogin} className="space-y-3 text-left">
+          <form onSubmit={handleLogin} className="space-y-4 text-left">
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">User Email ID</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1">User Email ID</label>
               <input 
                 type="text"
                 placeholder="e.g. user@company.com"
                 value={loginInput}
                 onChange={(e) => { setLoginInput(e.target.value); setLoginError(''); }}
-                className="w-full text-xs border border-slate-200 rounded-lg p-3 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-sm border border-slate-200 rounded-xl p-3.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 required
               />
             </div>
             {loginError && (
-              <p className="text-[11px] text-red-600 font-medium bg-red-50 p-2 rounded-lg border border-red-100">{loginError}</p>
+              <p className="text-xs text-red-600 font-medium bg-red-50 p-3 rounded-xl border border-red-100">{loginError}</p>
             )}
             <button 
               type="submit"
               disabled={isAuthenticating}
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-3 rounded-lg transition shadow-sm disabled:opacity-50"
+              className="w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-3.5 rounded-xl transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
             >
+              {isAuthenticating && <Loader2 className="w-4 h-4 animate-spin" />}
               {isAuthenticating ? 'Verifying access...' : 'Sign In'}
             </button>
           </form>
-          <p className="text-[10px] text-slate-400 mt-4">Access is verified against the database Users list.</p>
+          <p className="text-xs text-slate-400 mt-5">Access is verified against the database Users list.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-white pb-24 border-x border-slate-100 flex flex-col justify-between select-none">
+    <div className="max-w-md mx-auto min-h-screen bg-white pb-28 border-x border-slate-100 flex flex-col justify-between select-none text-sm">
       
-      <div className="bg-slate-900 text-white px-4 py-2.5 text-xs flex justify-between items-center">
-        <div className="flex items-center gap-1.5">
-          {isAdmin ? <Shield className="w-3.5 h-3.5 text-amber-400" /> : <User className="w-3.5 h-3.5 text-brand-400" />}
-          <span className="font-semibold truncate max-w-[180px]">{currentUserEmail}</span>
+      {/* HEADER BAR WITH USER SESSION */}
+      <div className="bg-slate-900 text-white px-4 py-3 flex justify-between items-center text-xs">
+        <div className="flex items-center gap-2">
+          {isAdmin ? <Shield className="w-4 h-4 text-amber-400" /> : <User className="w-4 h-4 text-brand-400" />}
+          <span className="font-semibold truncate max-w-[170px] text-xs">{currentUserEmail}</span>
+          {isLoadingData && <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" title="Syncing..." />}
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${isAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-brand-500/20 text-brand-300'}`}>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-brand-500/20 text-brand-300'}`}>
             {isAdmin ? 'Admin' : 'User'}
           </span>
           <button 
@@ -413,7 +433,7 @@ export default function App() {
             title="Sign out"
             className="text-slate-400 hover:text-white transition p-1"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -423,49 +443,50 @@ export default function App() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">Trade Operations</h1>
-                <p className="text-[11px] text-slate-400">{isAdmin ? 'Full System Overview' : 'Assigned Workflow Overview'}</p>
+                <h1 className="text-lg font-bold text-slate-900 tracking-tight">Trade Operations</h1>
+                <p className="text-xs text-slate-400">{isAdmin ? 'Full System Overview' : 'Assigned Workflow Overview'}</p>
               </div>
-              <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); }} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
+              <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); }} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition">
                 <span>&rarr;</span> Open deals
               </button>
             </div>
 
+            {/* Clickable & Filtering Metric Grid */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div 
                 onClick={() => { setDealFilter('all'); setActiveTab('deals'); }}
-                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+                className="border border-slate-200 rounded-2xl p-4 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Live deals &rarr;</p>
-                <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.liveDeals}</p>
-                <p className="text-[11px] text-slate-400">Across active routes</p>
+                <p className="text-2xl font-bold text-slate-900 my-1">{metrics.liveDeals}</p>
+                <p className="text-xs text-slate-400">Across active routes</p>
               </div>
 
               <div 
                 onClick={() => { setDealFilter('highSeas'); setActiveTab('deals'); }}
-                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+                className="border border-slate-200 rounded-2xl p-4 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">High seas &rarr;</p>
-                <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.highSeas}</p>
-                <p className="text-[11px] text-slate-400">Require close watch</p>
+                <p className="text-2xl font-bold text-slate-900 my-1">{metrics.highSeas}</p>
+                <p className="text-xs text-slate-400">Require close watch</p>
               </div>
 
               <div 
                 onClick={() => { setQueueStatusFilter('Delayed'); setActiveTab('queue'); }}
-                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+                className="border border-slate-200 rounded-2xl p-4 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Delayed steps &rarr;</p>
-                <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.delayedSteps}</p>
-                <p className="text-[11px] text-slate-400">Require action</p>
+                <p className="text-2xl font-bold text-slate-900 my-1">{metrics.delayedSteps}</p>
+                <p className="text-xs text-slate-400">Require action</p>
               </div>
 
               <div 
                 onClick={() => { setQueueStatusFilter('Pending'); setActiveTab('queue'); }}
-                className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
+                className="border border-slate-200 rounded-2xl p-4 bg-white hover:border-brand-500 hover:shadow-sm transition cursor-pointer group"
               >
                 <p className="text-xs font-medium text-slate-500 group-hover:text-brand-600 transition">Pending steps &rarr;</p>
-                <p className="text-2xl font-bold text-slate-900 my-0.5">{metrics.pendingSteps}</p>
-                <p className="text-[11px] text-slate-400">Awaiting update</p>
+                <p className="text-2xl font-bold text-slate-900 my-1">{metrics.pendingSteps}</p>
+                <p className="text-xs text-slate-400">Awaiting update</p>
               </div>
             </div>
 
@@ -473,20 +494,20 @@ export default function App() {
               <h2 className="text-sm font-bold text-slate-900">Attention queue</h2>
               <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); }} className="text-xs font-semibold text-brand-600 hover:underline">Open queue</button>
             </div>
-            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+            <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
               {visibleSteps.filter(s => s.status !== 'Done').length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-400">No active items requiring attention.</div>
               ) : (
                 visibleSteps.filter(s => s.status !== 'Done').slice(0, 7).map((step) => (
-                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                    <div className="flex items-start gap-2.5">
-                      <AlertTriangle className="w-4 h-4 text-slate-400 mt-0.5" />
+                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
-                        <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{step.assignedEmail} &middot; Due {step.dueDate}</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
                       {step.status}
                     </span>
                   </div>
@@ -499,40 +520,40 @@ export default function App() {
         {activeTab === 'deals' && !selectedDealId && (
           <div>
             <div className="flex justify-between items-center mb-3">
-              <h1 className="text-xl font-bold text-slate-900">Deals</h1>
+              <h1 className="text-lg font-bold text-slate-900">Deals</h1>
               {isAdmin && (
-                <button onClick={handleOpenAddModal} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition">
-                  <Plus className="w-3.5 h-3.5" /> New deal
+                <button onClick={handleOpenAddModal} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition">
+                  <Plus className="w-4 h-4" /> New deal
                 </button>
               )}
             </div>
 
             <div className="mb-4">
-              <label className="text-xs font-medium text-slate-700 block mb-1">Deal filter</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Deal filter</label>
               <select 
                 value={dealFilter}
                 onChange={(e) => setDealFilter(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-xs border border-slate-200 rounded-xl p-3 bg-slate-50 text-slate-800 focus:outline-none"
               >
                 <option value="all">All assigned deals ({visibleDeals.length})</option>
                 <option value="highSeas">High seas only ({metrics.highSeas})</option>
               </select>
             </div>
 
-            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden mt-4">
+            <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden mt-4">
               {filteredDeals.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">No deals match the selected criteria.</div>
               ) : (
                 filteredDeals.map((deal) => (
-                  <div key={deal.id} onClick={() => setSelectedDealId(deal.id)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                  <div key={deal.id} onClick={() => setSelectedDealId(deal.id)} className="p-4 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
                     <div className="flex items-center gap-3">
                       <Ship className="w-4 h-4 text-slate-500" />
                       <div>
                         <p className="text-xs font-bold text-slate-900">{deal.id} &middot; {deal.buyer}</p>
-                        <p className="text-[11px] text-slate-500">{deal.supplier} &middot; Ship {deal.shipmentDate}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{deal.supplier} &middot; Ship {deal.shipmentDate}</p>
                       </div>
                     </div>
-                    <span className="bg-amber-100/70 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">{deal.status}</span>
+                    <span className="bg-amber-100/70 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">{deal.status}</span>
                   </div>
                 ))
               )}
@@ -547,9 +568,9 @@ export default function App() {
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span>{selectedDeal.id}</span>
             </div>
-            <h1 className="text-lg font-bold text-slate-900 mb-3">{selectedDeal.id} &middot; {selectedDeal.buyer}</h1>
+            <h1 className="text-base font-bold text-slate-900 mb-3">{selectedDeal.id} &middot; {selectedDeal.buyer}</h1>
             
-            <div className="border border-slate-200 rounded-xl p-4 bg-white mb-4 text-xs space-y-2">
+            <div className="border border-slate-200 rounded-2xl p-4 bg-white mb-4 text-xs space-y-2">
               <p><span className="font-semibold text-slate-500">Supplier:</span> {selectedDeal.supplier}</p>
               <p><span className="font-semibold text-slate-500">Shipment Date:</span> {selectedDeal.shipmentDate}</p>
               <p><span className="font-semibold text-slate-500">Destination Date:</span> {selectedDeal.destinationDate || 'N/A'}</p>
@@ -560,19 +581,19 @@ export default function App() {
               <h2 className="text-sm font-bold text-slate-900">Lifecycle steps</h2>
               <span className="text-xs text-slate-400">{selectedDealSteps.length} steps</span>
             </div>
-            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+            <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
               {selectedDealSteps.map((step) => (
-                <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                  <div className="flex items-start gap-2.5">
-                    <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
+                <div key={step.id} onClick={() => setEditingStep(step)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-xs font-bold text-slate-900 leading-snug">{step.name}</p>
-                      <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
-                      {step.actualDate && <p className="text-[10px] text-brand-600 mt-0.5 font-medium">Completed: {step.actualDate}</p>}
-                      {step.docRef && <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Ref: {step.docRef}</p>}
+                      <p className="text-xs text-slate-500 mt-0.5">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+                      {step.actualDate && <p className="text-[11px] text-brand-600 mt-1 font-semibold">Completed: {step.actualDate}</p>}
+                      {step.docRef && <p className="text-[11px] text-slate-500 mt-1 font-semibold">Ref: {step.docRef}</p>}
                     </div>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
                     step.status === 'Done' ? 'bg-green-100 text-green-700' : 
                     step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 
                     'bg-amber-100/70 text-amber-700'
@@ -587,14 +608,14 @@ export default function App() {
 
         {activeTab === 'queue' && (
           <div>
-            <h1 className="text-xl font-bold text-slate-900 mb-3">Queue &amp; Actions</h1>
+            <h1 className="text-lg font-bold text-slate-900 mb-3">Queue &amp; Actions</h1>
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div>
-                <label className="text-[11px] font-medium text-slate-600 block mb-1">Status Filter</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Status Filter</label>
                 <select 
                   value={queueStatusFilter} 
                   onChange={(e) => setQueueStatusFilter(e.target.value)} 
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
+                  className="w-full text-xs border border-slate-200 rounded-xl p-3 bg-slate-50 text-slate-800 focus:outline-none"
                 >
                   <option value="all">All Statuses</option>
                   <option value="Pending">Pending</option>
@@ -602,12 +623,12 @@ export default function App() {
                 </select>
               </div>
               <div>
-                <label className="text-[11px] font-medium text-slate-600 block mb-1">Assignment</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Assignment</label>
                 <select 
                   value={queueScope} 
                   onChange={(e) => setQueueScope(e.target.value)} 
                   disabled={!isAdmin}
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none"
+                  className="w-full text-xs border border-slate-200 rounded-xl p-3 bg-slate-50 text-slate-800 focus:outline-none"
                 >
                   <option value="all">{isAdmin ? 'All team steps' : 'My assigned steps'}</option>
                   {isAdmin && <option value="my">My assigned steps</option>}
@@ -615,20 +636,20 @@ export default function App() {
               </div>
             </div>
 
-            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+            <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
               {filteredQueueSteps.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">No steps match the active filter criteria.</div>
               ) : (
                 filteredQueueSteps.map((step) => (
-                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
-                    <div className="flex items-start gap-2.5">
-                      <FileText className="w-4 h-4 text-slate-400 mt-0.5" />
+                  <div key={step.id} onClick={() => setEditingStep(step)} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer">
+                    <div className="flex items-start gap-3">
+                      <FileText className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs font-bold text-slate-900 leading-snug">{step.name} &middot; {step.dealId}</p>
-                        <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{step.assignedEmail} &middot; Due {step.dueDate}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{step.assignedEmail} &middot; Due {step.dueDate}</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${step.status === 'Delayed' ? 'bg-red-100 text-red-700' : 'bg-amber-100/70 text-amber-700'}`}>
                       {step.status}
                     </span>
                   </div>
@@ -642,12 +663,14 @@ export default function App() {
         {activeTab === 'playbook' && isAdmin && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h1 className="text-xl font-bold text-slate-900">Playbook &amp; Access</h1>
+              <h1 className="text-lg font-bold text-slate-900">Playbook &amp; Access</h1>
               <button 
                 onClick={savePlaybookRules}
-                className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition"
+                disabled={isLoadingData}
+                className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
               >
-                <Save className="w-3.5 h-3.5" /> Save All Changes
+                {isLoadingData ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save All Changes
               </button>
             </div>
 
@@ -657,34 +680,34 @@ export default function App() {
                 <h2 className="text-sm font-bold text-slate-900">User &amp; Role Definitions</h2>
                 <button 
                   onClick={handleAddUser}
-                  className="text-xs text-brand-600 font-semibold hover:underline flex items-center gap-1"
+                  className="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1"
                 >
-                  <Plus className="w-3 h-3" /> Add User
+                  <Plus className="w-3.5 h-3.5" /> Add User
                 </button>
               </div>
               <p className="text-xs text-slate-500 mb-3">Define who has access to the app and assign admin or user roles.</p>
               
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {authorizedUsers.map((u, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs flex items-center gap-2">
+                  <div key={idx} className="border border-slate-200 rounded-2xl p-3 bg-white text-xs flex items-center gap-2">
                     <input 
                       type="text"
                       placeholder="user@company.com"
                       value={u.email}
                       onChange={(e) => handleUserChange(idx, 'email', e.target.value)}
-                      className="flex-1 border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                      className="flex-1 border border-slate-200 rounded-xl p-2.5 bg-slate-50 font-medium text-xs"
                     />
                     <select
                       value={u.role}
                       onChange={(e) => handleUserChange(idx, 'role', e.target.value)}
-                      className="border border-slate-200 rounded-lg p-2 bg-slate-50 font-semibold text-slate-700"
+                      className="border border-slate-200 rounded-xl p-2.5 bg-slate-50 font-bold text-slate-700 text-xs"
                     >
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
                     </select>
                     <button 
                       onClick={() => handleRemoveUser(idx)}
-                      className="text-slate-400 hover:text-red-600 p-1 transition"
+                      className="text-slate-400 hover:text-red-600 p-1.5 transition"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -700,25 +723,25 @@ export default function App() {
               
               <div className="space-y-3">
                 {stepMaster.map((rule, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-xl p-3 bg-white text-xs space-y-2">
-                    <p className="font-bold text-slate-900">{rule.stepName}</p>
+                  <div key={idx} className="border border-slate-200 rounded-2xl p-3.5 bg-white text-xs space-y-2">
+                    <p className="font-bold text-slate-900 text-xs">{rule.stepName}</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Offset (Days)</label>
+                        <label className="text-[11px] font-semibold text-slate-500 block mb-1">Offset (Days)</label>
                         <input 
                           type="number"
                           value={rule.rule}
                           onChange={(e) => handlePlaybookChange(idx, 'rule', e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                          className="w-full border border-slate-200 rounded-xl p-2.5 bg-slate-50 font-medium text-xs"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Assignee Email</label>
+                        <label className="text-[11px] font-semibold text-slate-500 block mb-1">Assignee Email</label>
                         <input 
                           type="email"
                           value={rule.emailId}
                           onChange={(e) => handlePlaybookChange(idx, 'emailId', e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 font-medium"
+                          className="w-full border border-slate-200 rounded-xl p-2.5 bg-slate-50 font-medium text-xs"
                         />
                       </div>
                     </div>
@@ -733,26 +756,26 @@ export default function App() {
       {/* UPDATE STEP MODAL */}
       {editingStep && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
-          <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl animate-in slide-in-from-bottom duration-200">
+          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 shadow-2xl animate-in slide-in-from-bottom duration-200 text-xs">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">Update Step</h2>
-                <p className="text-[11px] text-slate-500">{editingStep.name} &middot; {editingStep.dealId}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{editingStep.name} &middot; {editingStep.dealId}</p>
               </div>
-              <button onClick={() => setEditingStep(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => setEditingStep(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={handleUpdateStep} className="space-y-3 text-xs">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex justify-between items-center">
+            <form onSubmit={handleUpdateStep} className="space-y-3.5">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center">
                 <span className="font-semibold text-slate-500">Target Deadline</span>
-                <span className="font-bold text-slate-800">{editingStep.dueDate || 'No deadline set'}</span>
+                <span className="font-bold text-slate-900">{editingStep.dueDate || 'No deadline set'}</span>
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Status</label>
+                <label className="font-bold text-slate-700 block mb-1">Status</label>
                 <select 
                   value={editingStep.status}
                   onChange={(e) => setEditingStep({...editingStep, status: e.target.value})}
-                  className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:outline-none"
+                  className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none font-semibold"
                 >
                   <option value="Pending">Pending</option>
                   <option value="Done">Done</option>
@@ -761,25 +784,25 @@ export default function App() {
                 </select>
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Actual Completion Date</label>
+                <label className="font-bold text-slate-700 block mb-1">Actual Completion Date</label>
                 <input 
                   type="date"
                   value={editingStep.actualDate}
                   onChange={(e) => setEditingStep({...editingStep, actualDate: e.target.value})}
-                  className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:outline-none"
+                  className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none font-semibold"
                 />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Document Reference (BL / Inv #)</label>
+                <label className="font-bold text-slate-700 block mb-1">Document Reference (BL / Inv #)</label>
                 <input 
                   type="text"
                   placeholder="e.g. BL-492911"
                   value={editingStep.docRef}
                   onChange={(e) => setEditingStep({...editingStep, docRef: e.target.value})}
-                  className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:outline-none"
+                  className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none font-semibold"
                 />
               </div>
-              <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-lg transition mt-4">
+              <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl transition mt-5 shadow-sm">
                 Save Updates
               </button>
             </form>
@@ -790,59 +813,59 @@ export default function App() {
       {/* CREATE DEAL MODAL (ADMIN ONLY) */}
       {showAddModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-end justify-center backdrop-blur-sm">
-          <div className="bg-white rounded-t-2xl w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
+          <div className="bg-white rounded-t-3xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-200 text-xs">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-sm font-bold text-slate-900">Add a new deal</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={handleCreateDeal} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateDeal} className="space-y-3.5">
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Deal ID</label>
-                <input type="text" value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+                <label className="font-bold text-slate-700 block mb-1">Deal ID</label>
+                <input type="text" value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold" required />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Buyer</label>
-                <input type="text" placeholder="Buyer desk" value={formData.buyer} onChange={(e) => setFormData({...formData, buyer: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+                <label className="font-bold text-slate-700 block mb-1">Buyer</label>
+                <input type="text" placeholder="Buyer desk" value={formData.buyer} onChange={(e) => setFormData({...formData, buyer: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold" required />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Supplier</label>
-                <input type="text" placeholder="Supplier desk" value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" />
+                <label className="font-bold text-slate-700 block mb-1">Supplier</label>
+                <input type="text" placeholder="Supplier desk" value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold" />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Shipment date</label>
-                <input type="date" value={formData.shipmentDate} onChange={(e) => setFormData({...formData, shipmentDate: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" required />
+                <label className="font-bold text-slate-700 block mb-1">Shipment date</label>
+                <input type="date" value={formData.shipmentDate} onChange={(e) => setFormData({...formData, shipmentDate: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold" required />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Destination date</label>
-                <input type="date" value={formData.destinationDate} onChange={(e) => setFormData({...formData, destinationDate: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50" />
+                <label className="font-bold text-slate-700 block mb-1">Destination date</label>
+                <input type="date" value={formData.destinationDate} onChange={(e) => setFormData({...formData, destinationDate: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold" />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">High-seas handling</label>
-                <select value={formData.highSeas} onChange={(e) => setFormData({...formData, highSeas: e.target.value})} className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50">
+                <label className="font-bold text-slate-700 block mb-1">High-seas handling</label>
+                <select value={formData.highSeas} onChange={(e) => setFormData({...formData, highSeas: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 bg-slate-50 font-semibold">
                   <option value="No">No</option>
                   <option value="Yes">Yes</option>
                 </select>
               </div>
-              <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-lg mt-2">+ Create deal</button>
+              <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl mt-3 shadow-sm">+ Create deal</button>
             </form>
           </div>
         </div>
       )}
 
       {/* NAV BAR */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-sm border-t border-slate-200 px-6 py-2 flex justify-around items-center z-40">
-        <button onClick={() => { setActiveTab('overview'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'overview' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-          <div className={`p-1 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[10px]">Overview</span>
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 px-6 py-2.5 flex justify-around items-center z-40 text-xs">
+        <button onClick={() => { setActiveTab('overview'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'overview' ? 'text-brand-600 font-bold' : 'text-slate-400'}`}>
+          <div className={`p-1.5 rounded-full ${activeTab === 'overview' ? 'bg-brand-50 text-brand-600' : ''}`}><LayoutGrid className="w-5 h-5" /></div><span className="text-[11px]">Overview</span>
         </button>
-        <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-          <div className={`p-1 rounded-full ${activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[10px]">Deals</span>
+        <button onClick={() => { setDealFilter('all'); setActiveTab('deals'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'deals' ? 'text-brand-600 font-bold' : 'text-slate-400'}`}>
+          <div className={`p-1.5 rounded-full ${activeTab === 'deals' ? 'bg-brand-50 text-brand-600' : ''}`}><Ship className="w-5 h-5" /></div><span className="text-[11px]">Deals</span>
         </button>
-        <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-          <div className={`p-1 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[10px]">Queue</span>
+        <button onClick={() => { setQueueStatusFilter('all'); setActiveTab('queue'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'queue' ? 'text-brand-600 font-bold' : 'text-slate-400'}`}>
+          <div className={`p-1.5 rounded-full ${activeTab === 'queue' ? 'bg-brand-50 text-brand-600' : ''}`}><CheckSquare className="w-5 h-5" /></div><span className="text-[11px]">Queue</span>
         </button>
         {isAdmin && (
-          <button onClick={() => { setActiveTab('playbook'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'playbook' ? 'text-brand-600 font-semibold' : 'text-slate-400'}`}>
-            <div className={`p-1 rounded-full ${activeTab === 'playbook' ? 'bg-brand-50 text-brand-600' : ''}`}><BookOpen className="w-5 h-5" /></div><span className="text-[10px]">Playbook</span>
+          <button onClick={() => { setActiveTab('playbook'); setSelectedDealId(null); }} className={`flex flex-col items-center gap-1 transition ${activeTab === 'playbook' ? 'text-brand-600 font-bold' : 'text-slate-400'}`}>
+            <div className={`p-1.5 rounded-full ${activeTab === 'playbook' ? 'bg-brand-50 text-brand-600' : ''}`}><BookOpen className="w-5 h-5" /></div><span className="text-[11px]">Playbook</span>
           </button>
         )}
       </div>
